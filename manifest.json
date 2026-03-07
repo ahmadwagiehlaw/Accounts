@@ -1,0 +1,31 @@
+{
+    "name": "SubMaster - إدارة الاشتراكات",
+    "short_name": "SubMaster",
+    "description": "تطبيق متقدم لإدارة الاشتراكات والحسابات والماليات سحابياً",
+    "start_url": "/index.html",
+    "display": "standalone",
+    "background_color": "#0b0f19",
+    "theme_color": "#0b0f19",
+    "orientation": "portrait-primary",
+    "dir": "rtl",
+    "lang": "ar",
+    "categories": [
+        "utilities",
+        "business",
+        "productivity"
+    ],
+    "icons": [
+        {
+            "src": "assets/icon-192x192.png",
+            "sizes": "192x192",
+            "type": "image/png",
+            "purpose": "any maskable"
+        },
+        {
+            "src": "assets/icon-512x512.png",
+            "sizes": "512x512",
+            "type": "image/png",
+            "purpose": "any maskable"
+        }
+    ]
+}
