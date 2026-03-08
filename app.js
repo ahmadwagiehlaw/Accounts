@@ -111,9 +111,27 @@ document.addEventListener('DOMContentLoaded', () => {
         document.body.classList.add('hide-credentials');
     }
 
+    const btnCleanupDB = document.getElementById('btnCleanupDB');
+
     if (btnDisplaySettings) {
         btnDisplaySettings.addEventListener('click', () => {
             openModal('settingsModal');
+        });
+    }
+
+    if (btnCleanupDB) {
+        btnCleanupDB.addEventListener('click', async () => {
+            const res = await Swal.fire({
+                title: 'تأكيد التنظيف',
+                text: 'هل أنت متأكد من رغبتك في دمج وحذف الخدمات المكررة؟',
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonText: 'نعم، نظف الآن',
+                cancelButtonText: 'إلغاء'
+            });
+            if (res.isConfirmed) {
+                await DataManager.cleanupDatabase();
+            }
         });
     }
 

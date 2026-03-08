@@ -12,7 +12,6 @@ const WORKPLACES_KEY = STORAGE_PREFIX + 'workplaces';
 const defaultPlatforms = [
     { id: '1', name: 'ChatGPT', icon: 'fa-solid fa-robot', color: '#10a37f' },
     { id: '2', name: 'Gemini', icon: 'fa-brands fa-google', color: '#4285F4' },
-    { id: '3', name: 'Claude', icon: 'fa-solid fa-brain', color: '#d2b694' },
     { id: '4', name: 'Perplexity', icon: 'fa-solid fa-magnifying-glass-chart', color: '#20808d' },
     { id: '5', name: 'Coursera', icon: 'fa-solid fa-graduation-cap', color: '#0056d2' },
     { id: '6', name: 'LinkedIn', icon: 'fa-brands fa-linkedin', color: '#0a66c2' },
@@ -70,11 +69,15 @@ class DataManager {
 
         this.isFirebaseReady = true;
 
+        let platformsInitialized = false;
         // Sync Platforms
-        onSnapshot(collection(db, "platforms"), (snapshot) => {
+        onSnapshot(collection(db, "platforms"), async (snapshot) => {
             this.platforms = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-            if (this.platforms.length === 0) {
-                defaultPlatforms.forEach(p => this.addPlatform(p));
+            if (this.platforms.length === 0 && !platformsInitialized) {
+                platformsInitialized = true;
+                for (const p of defaultPlatforms) {
+                    await this.addPlatform(p);
+                }
             } else {
                 localStorage.setItem(PLATFORMS_KEY, JSON.stringify(this.platforms));
                 window.dispatchEvent(new Event('dataChanged'));
@@ -354,6 +357,70 @@ class DataManager {
     static async importData(jsonString) {
         console.warn("Import is disabled when Firebase is active, to prevent overwriting cloud data.");
         return false;
+    }
+
+    static async cleanupDatabase() {
+        if (!this.isFirebaseReady) return;
+
+        console.log("Starting database cleanup... Merging duplicates and replacing Claude with ChatGPT.");
+        try {
+            const platforms = [...this.platforms];
+            const plans = [...this.servicePlans];
+            const accounts = [...this.accounts];
+
+            const platformGroups = {};
+            platforms.forEach(p => {
+                let name = p.name ? p.name.trim().toLowerCase() : '';
+                if (name === 'claude') name = 'chatgpt';
+
+                if (!platformGroups[name]) platformGroups[name] = [];
+                platformGroups[name].push(p);
+            });
+
+            for (const [name, group] of Object.entries(platformGroups)) {
+                if (group.length > 1) {
+                    group.sort((a, b) => {
+                        if (a.icon === 'fa-solid fa-robot' && b.icon !== 'fa-solid fa-robot') return -1;
+                        if (b.icon === 'fa-solid fa-robot' && a.icon !== 'fa-solid fa-robot') return 1;
+                        return 0; // retain first if same priority
+                    });
+
+                    const primary = group[0];
+                    const duplicates = group.slice(1);
+
+                    for (const dup of duplicates) {
+                        const plansToUpdate = plans.filter(p => p.platformId === dup.id);
+                        for (const plan of plansToUpdate) {
+                            await this.updateServicePlan({ id: plan.id, platformId: primary.id });
+                        }
+
+                        const accountsToUpdate = accounts.filter(a => a.platformId === dup.id);
+                        for (const acc of accountsToUpdate) {
+                            await this.updateAccount({ id: acc.id, platformId: primary.id });
+                        }
+
+                        await this.deletePlatform(dup.id);
+                        console.log(`Merged and deleted duplicate platform: ${dup.name} (${dup.id}) into ${primary.name} (${primary.id})`);
+                    }
+                }
+            }
+
+            Swal.fire({
+                title: 'تم التنظيف!',
+                text: 'تمت إزالة الخدمات المكررة ودمج Claude إلى ChatGPT بنجاح.',
+                icon: 'success',
+                confirmButtonText: 'حسناً'
+            });
+
+        } catch (error) {
+            console.error("Error during DB cleanup:", error);
+            Swal.fire({
+                title: 'خطأ',
+                text: 'حدث خطأ أثناء تنظيف البيانات.',
+                icon: 'error',
+                confirmButtonText: 'حسناً'
+            });
+        }
     }
 }
 
