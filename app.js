@@ -385,6 +385,21 @@ document.addEventListener('DOMContentLoaded', () => {
     //  DASHBOARD
     // ============================================================
     function renderDashboard() {
+        // Welcome Banner Logic
+        const welcomeDate = document.getElementById('welcomeDate');
+        const welcomeMsg = document.getElementById('welcomeMsg');
+        if (welcomeDate && welcomeMsg) {
+            const now = new Date();
+            const hour = now.getHours();
+            let greeting = 'مرحباً بك!';
+            if (hour < 12) greeting = 'صباح الخير ☀️';
+            else if (hour < 18) greeting = 'مساء الخير 🌤️';
+            else greeting = 'مساء الخير 🌙';
+
+            welcomeMsg.innerText = greeting;
+            welcomeDate.innerText = now.toLocaleDateString('ar-EG', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+        }
+
         const stats = DataManager.calculateStats();
         const accounts = DataManager.getAccounts();
         const fmt = (num) => Number(num).toLocaleString('ar-EG');
@@ -1043,7 +1058,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const tr = document.createElement('tr');
             tr.innerHTML = `
-                <td>
+                <td data-label="الخدمة / الخطة">
                     <div class="platform-cell">
                         <div class="platform-icon" style="background:${platform ? platform.color + '25' : '#333'};color:${platform ? platform.color : '#fff'};">
                             <i class="${platform ? escapeHtml(platform.icon) : 'fa-solid fa-server'}"></i>
@@ -1051,33 +1066,33 @@ document.addEventListener('DOMContentLoaded', () => {
                         ${serviceLabel}
                     </div>
                 </td>
-                <td>
+                <td data-label="المشترك">
                     <div style="font-weight:700;">${escapeHtml(custName)}</div>
                     <div class="text-muted" style="font-size:0.82rem">${escapeHtml(custPhone || 'بدون رقم')}</div>
                 </td>
-                <td class="text-center">
+                <td data-label="بيانات الدخول" class="text-center">
                     <button class="btn-icon show-creds-btn" data-id="${acc.id}" title="عرض بيانات الدخول">
                         <i class="fa-solid fa-key text-warning"></i>
                     </button>
                 </td>
-                <td>
+                <td data-label="التاريخ/المدة">
                     <div>${acc.startDate || '-'}</div>
                     <div class="text-primary" style="font-size:0.82rem;font-weight:700;">
                         ${acc.durationDays} يوم
                         <span class="text-muted">(${statusInfo.daysLeft} متبقي)</span>
                     </div>
                 </td>
-                <td class="col-financials">
+                <td data-label="الماليات" class="col-financials">
                     <div>اشتراك: <span class="text-success">${Number(acc.revenue).toLocaleString('ar-EG')}</span> ج.م</div>
                     ${refund > 0 ? '<div>تعويض: <span class="text-danger">' + Number(acc.refund).toLocaleString('ar-EG') + '</span> ج.م</div>' : ''}
                 </td>
-                <td class="text-center">${paidBtn}</td>
-                <td>
+                <td data-label="سدّد؟" class="text-center">${paidBtn}</td>
+                <td data-label="الكود / ملاحظات">
                     <div style="font-family:monospace;user-select:text;font-size:0.85rem;">${escapeHtml(acc.activationCode || '-')}</div>
                     <div class="text-muted" style="font-size:0.78rem">${escapeHtml(acc.notes ? (acc.notes.length > 30 ? acc.notes.substring(0, 30) + '...' : acc.notes) : '')}</div>
                 </td>
-                <td><span class="status-badge status-${statusInfo.status}">${statusInfo.label}</span></td>
-                <td>
+                <td data-label="الحالة"><span class="status-badge status-${statusInfo.status}">${statusInfo.label}</span></td>
+                <td data-label="إجراءات">
                     <div class="actions-cell">
                         <button class="btn-icon edit-acc-btn" data-id="${acc.id}" title="تعديل"><i class="fa-solid fa-pen text-info"></i></button>
                         <button class="btn-icon delete-acc-btn" data-id="${acc.id}" title="حذف"><i class="fa-solid fa-trash text-danger"></i></button>

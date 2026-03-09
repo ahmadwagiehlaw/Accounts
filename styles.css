@@ -191,8 +191,15 @@ h6 {
     filter: drop-shadow(0 0 8px rgba(99, 102, 241, 0.6));
 }
 
+.logo h2 {
+    font-weight: 900;
+    letter-spacing: 0.5px;
+    text-shadow: 0 0 10px rgba(255, 255, 255, 0.2);
+}
+
 .logo span {
     color: var(--primary-color);
+    text-shadow: 0 0 15px rgba(99, 102, 241, 0.8);
 }
 
 .mobile-menu-close {
@@ -447,6 +454,32 @@ h6 {
 }
 
 /* ======== Dashboard (Smart Wallet Redesign) ======== */
+@keyframes shimmer {
+    0% {
+        transform: translateX(-150%) skewX(-20deg);
+    }
+
+    100% {
+        transform: translateX(150%) skewX(-20deg);
+    }
+}
+
+@keyframes wave {
+
+    0%,
+    100% {
+        transform: rotate(0);
+    }
+
+    25% {
+        transform: rotate(-15deg);
+    }
+
+    75% {
+        transform: rotate(15deg);
+    }
+}
+
 .wallet-card {
     padding: 1.25rem;
     background: linear-gradient(135deg, rgba(99, 102, 241, 0.15) 0%, rgba(139, 92, 246, 0.15) 100%);
@@ -1088,21 +1121,38 @@ h6 {
 }
 
 /* PWA Install Banner */
+@keyframes slideUpFloat {
+    from {
+        transform: translateX(-50%) translateY(150%);
+        opacity: 0;
+    }
+
+    to {
+        transform: translateX(-50%) translateY(0);
+        opacity: 1;
+    }
+}
+
 .pwa-install-banner {
-    margin-bottom: 1.5rem;
-    padding: 1rem 1.5rem;
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    width: 90%;
+    max-width: 400px;
+    padding: 1.25rem;
     display: flex;
     justify-content: space-between;
     align-items: center;
-    background: linear-gradient(135deg, rgba(99, 102, 241, 0.1), rgba(168, 85, 247, 0.1));
-    border: 1px solid rgba(99, 102, 241, 0.2);
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
-    border-radius: 16px;
-    animation: slideInDown 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+    background: var(--bg-glass-heavy);
+    backdrop-filter: blur(40px) saturate(200%);
+    -webkit-backdrop-filter: blur(40px) saturate(200%);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.6);
+    border-radius: 20px;
     flex-wrap: wrap;
     gap: 1rem;
-    position: relative;
-    z-index: 100;
+    z-index: 10000;
+    animation: slideUpFloat 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
 }
 
 .pwa-banner-content {
@@ -1698,6 +1748,62 @@ textarea.form-control {
     .table-container {
         padding: 0.75rem;
     }
+
+    /* Accounts Table Responsive Cards */
+    .data-table,
+    .data-table tbody,
+    .data-table tr,
+    .data-table td {
+        display: block;
+        width: 100%;
+    }
+
+    .data-table thead {
+        display: none;
+    }
+
+    .data-table tr {
+        margin-bottom: 1rem;
+        background: rgba(255, 255, 255, 0.03) !important;
+        border: 1px solid var(--border-glass-highlight);
+        border-radius: var(--radius-lg);
+        padding: 0.5rem;
+        position: relative;
+    }
+
+    .data-table td {
+        display: flex;
+        justify-content: flex-end;
+        align-items: center;
+        gap: 1rem;
+        padding: 0.75rem 0.5rem !important;
+        border: none !important;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.05) !important;
+        text-align: right;
+        border-radius: 0 !important;
+    }
+
+    .data-table td:last-child {
+        border-bottom: none !important;
+    }
+
+    .data-table td::before {
+        content: attr(data-label);
+        font-weight: 700;
+        color: var(--text-muted);
+        margin-left: auto;
+        flex-shrink: 0;
+    }
+
+    .data-table .actions-cell {
+        width: 100%;
+        justify-content: flex-end;
+    }
+
+    .data-table .platform-cell {
+        width: 100%;
+        justify-content: flex-end;
+    }
 }
 
 /* ============================================================ */
@@ -1755,15 +1861,40 @@ textarea.form-control {
 }
 
 .login-logo {
-    font-size: 3rem;
+    font-size: 3.5rem;
     color: var(--primary-color);
     margin-bottom: 0.5rem;
-    filter: drop-shadow(0 0 15px rgba(99, 102, 241, 0.5));
+    filter: drop-shadow(0 0 20px rgba(99, 102, 241, 0.8));
+    animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+    0% {
+        transform: scale(1);
+        filter: drop-shadow(0 0 15px rgba(99, 102, 241, 0.5));
+    }
+
+    50% {
+        transform: scale(1.05);
+        filter: drop-shadow(0 0 30px rgba(99, 102, 241, 0.9));
+    }
+
+    100% {
+        transform: scale(1);
+        filter: drop-shadow(0 0 15px rgba(99, 102, 241, 0.5));
+    }
 }
 
 .login-glass-box h2 {
-    font-size: 1.8rem;
+    font-size: 2.2rem;
     margin-bottom: 0.2rem;
+    font-weight: 900;
+    text-shadow: 0 0 10px rgba(255, 255, 255, 0.2);
+}
+
+.login-glass-box h2 span {
+    color: var(--primary-color);
+    text-shadow: 0 0 15px rgba(99, 102, 241, 0.8);
 }
 
 .login-glass-box p {

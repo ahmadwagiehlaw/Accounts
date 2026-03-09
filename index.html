@@ -205,6 +205,19 @@
                 <!-- ============ DASHBOARD ============ -->
                 <section id="view-dashboard" class="view active">
 
+                    <!-- Welcome Banner -->
+                    <div class="welcome-banner mb-4"
+                        style="display:flex; justify-content:space-between; align-items:center;">
+                        <div class="welcome-text">
+                            <h2 id="welcomeMsg" style="margin:0; font-size:1.4rem;">مرحباً بك!</h2>
+                            <p id="welcomeDate" class="text-muted" style="margin:0; font-size:0.9rem;"></p>
+                        </div>
+                        <div class="welcome-icon"
+                            style="font-size:2rem; color:var(--primary-color); animation: wave 2s infinite; transform-origin: bottom right;">
+                            👋
+                        </div>
+                    </div>
+
                     <!-- Smart Wallet Card -->
                     <div class="wallet-card glass-panel mb-4">
                         <div class="wallet-main-row"
@@ -214,7 +227,8 @@
                                 <span class="wallet-title">صافي الأرباح</span>
                             </div>
                             <div class="wallet-balance" id="stat-profit" style="margin:0; text-align:left;">0
-                                <span>ج.م</span></div>
+                                <span>ج.م</span>
+                            </div>
                         </div>
 
                         <div class="wallet-footer">
