@@ -111,6 +111,14 @@ document.addEventListener('DOMContentLoaded', () => {
         document.body.classList.add('hide-credentials');
     }
 
+    const toggleCompactMode = document.getElementById('toggleCompactMode');
+    const storedCompactMode = localStorage.getItem('submaster_compact_mode');
+
+    if (storedCompactMode === 'true') {
+        if (toggleCompactMode) toggleCompactMode.checked = true;
+        document.body.classList.add('compact-mode');
+    }
+
     const btnCleanupDB = document.getElementById('btnCleanupDB');
 
     if (btnDisplaySettings) {
@@ -148,6 +156,14 @@ document.addEventListener('DOMContentLoaded', () => {
             localStorage.setItem('submaster_show_credentials', e.target.checked);
             if (e.target.checked) document.body.classList.remove('hide-credentials');
             else document.body.classList.add('hide-credentials');
+        });
+    }
+
+    if (toggleCompactMode) {
+        toggleCompactMode.addEventListener('change', (e) => {
+            localStorage.setItem('submaster_compact_mode', e.target.checked);
+            if (e.target.checked) document.body.classList.add('compact-mode');
+            else document.body.classList.remove('compact-mode');
         });
     }
 

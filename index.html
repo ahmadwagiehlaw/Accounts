@@ -142,12 +142,12 @@
                     <button class="menu-toggle" id="menuToggle"><i class="fa-solid fa-bars"></i></button>
                     <h1 class="page-title" id="pageTitle">لوحة التحكم</h1>
                 </div>
-                <div class="header-right" style="display:flex; gap:0.5rem;">
-                    <button class="btn btn-secondary" id="btnDisplaySettings" title="إعدادات العرض">
-                        <i class="fa-solid fa-sliders"></i><span class="d-none d-sm-inline"> العرض</span>
+                <div class="header-right" style="display:flex; gap:0.5rem; align-items:center;">
+                    <button class="btn-icon" id="btnDisplaySettings" title="إعدادات العرض">
+                        <i class="fa-solid fa-sliders"></i>
                     </button>
                     <button class="btn btn-primary" id="btnNewAccount">
-                        <i class="fa-solid fa-plus"></i><span>اشتراك جديد</span>
+                        <i class="fa-solid fa-plus"></i><span class="d-none d-sm-inline"> اشتراك جديد</span>
                     </button>
                 </div>
             </header>
@@ -204,56 +204,66 @@
 
                 <!-- ============ DASHBOARD ============ -->
                 <section id="view-dashboard" class="view active">
-                    <div class="stats-grid">
-                        <div class="stat-card glass-panel">
-                            <div class="stat-icon icon-bg-success"><i class="fa-solid fa-sack-dollar"></i></div>
-                            <div class="stat-details">
-                                <h3>إجمالي الإيرادات</h3>
-                                <p class="stat-value text-success" id="stat-revenue">0 <span>ج.م</span></p>
+
+                    <!-- Smart Wallet Card -->
+                    <div class="wallet-card glass-panel mb-4">
+                        <div class="wallet-main-row"
+                            style="display:flex; justify-content:space-between; align-items:center;">
+                            <div style="display:flex; align-items:center; gap: 0.75rem;">
+                                <div class="wallet-icon"><i class="fa-solid fa-vault"></i></div>
+                                <span class="wallet-title">صافي الأرباح</span>
                             </div>
+                            <div class="wallet-balance" id="stat-profit" style="margin:0; text-align:left;">0
+                                <span>ج.م</span></div>
                         </div>
-                        <div class="stat-card glass-panel">
-                            <div class="stat-icon icon-bg-primary"><i class="fa-solid fa-money-bill-trend-up"></i></div>
-                            <div class="stat-details">
-                                <h3>إجمالي التكلفة</h3>
-                                <p class="stat-value text-primary" id="stat-cost">0 <span>ج.م</span></p>
+
+                        <div class="wallet-footer">
+                            <div class="wallet-stat">
+                                <small>الإيرادات</small>
+                                <span class="text-success" id="stat-revenue">0 <span>ج.م</span></span>
                             </div>
-                        </div>
-                        <div class="stat-card glass-panel highlight-card">
-                            <div class="stat-icon icon-bg-warning"><i class="fa-solid fa-vault"></i></div>
-                            <div class="stat-details">
-                                <h3>صافي الأرباح</h3>
-                                <p class="stat-value text-warning" id="stat-profit">0 <span>ج.م</span></p>
+                            <div class="divider"></div>
+                            <div class="wallet-stat">
+                                <small>التكلفة</small>
+                                <span class="text-primary" id="stat-cost">0 <span>ج.م</span></span>
                             </div>
-                        </div>
-                        <div class="stat-card glass-panel">
-                            <div class="stat-icon icon-bg-danger"><i class="fa-solid fa-hand-holding-dollar"></i></div>
-                            <div class="stat-details">
-                                <h3>إجمالي التعويضات</h3>
-                                <p class="stat-value text-danger" id="stat-refunds">0 <span>ج.م</span></p>
+                            <div class="divider"></div>
+                            <div class="wallet-stat">
+                                <small>التعويضات</small>
+                                <span class="text-danger" id="stat-refunds">0 <span>ج.م</span></span>
                             </div>
                         </div>
                     </div>
-                    <div class="quick-stats-row">
-                        <div class="quick-stat glass-panel">
+
+                    <!-- Compact Quick Stats Grid -->
+                    <div class="quick-chips-grid mb-4">
+                        <div class="quick-chip glass-panel">
                             <i class="fa-solid fa-users text-info"></i>
-                            <span id="stat-customers-count">0</span>
-                            <small>مشترك</small>
+                            <div class="chip-info">
+                                <span class="chip-val" id="stat-customers-count">0</span>
+                                <small>مشترك</small>
+                            </div>
                         </div>
-                        <div class="quick-stat glass-panel">
+                        <div class="quick-chip glass-panel">
                             <i class="fa-solid fa-check-circle text-success"></i>
-                            <span id="stat-active-count">0</span>
-                            <small>نشط</small>
+                            <div class="chip-info">
+                                <span class="chip-val" id="stat-active-count">0</span>
+                                <small>نشط</small>
+                            </div>
                         </div>
-                        <div class="quick-stat glass-panel">
+                        <div class="quick-chip glass-panel">
                             <i class="fa-solid fa-clock text-warning"></i>
-                            <span id="stat-warning-count">0</span>
-                            <small>قارب على الانتهاء</small>
+                            <div class="chip-info">
+                                <span class="chip-val" id="stat-warning-count">0</span>
+                                <small>ينتهي</small>
+                            </div>
                         </div>
-                        <div class="quick-stat glass-panel">
-                            <i class="fa-solid fa-times-circle text-danger"></i>
-                            <span id="stat-expired-count">0</span>
-                            <small>منتهي</small>
+                        <div class="quick-chip glass-panel">
+                            <i class="fa-solid fa-circle-xmark text-danger"></i>
+                            <div class="chip-info">
+                                <span class="chip-val" id="stat-expired-count">0</span>
+                                <small>منتهي</small>
+                            </div>
                         </div>
                     </div>
                     <div class="dashboard-charts-area glass-panel">
@@ -795,22 +805,55 @@
                 <h3>إعدادات العرض (المدير)</h3>
                 <button class="modal-close" data-dismiss="settingsModal"><i class="fa-solid fa-times"></i></button>
             </div>
-            <div class="modal-body">
-                <div class="form-group" style="display:flex; align-items:center;">
-                    <label style="display:flex; align-items:center; gap:10px; cursor:pointer;">
-                        <input type="checkbox" id="toggleFinancials" checked style="width:18px;height:18px;margin:0;">
-                        <span>إظهار البيانات المالية (التكلفة والأرباح)</span>
-                    </label>
+            <div class="modal-body" style="padding: 0.5rem 1.5rem 1.5rem;">
+                <div class="settings-list">
+                    <div class="setting-item">
+                        <div class="setting-info">
+                            <i class="fa-solid fa-coins text-warning"></i>
+                            <div>
+                                <strong>البيانات المالية</strong>
+                                <span>إظهار التكلفة والأرباح</span>
+                            </div>
+                        </div>
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="toggleFinancials" checked>
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
+
+                    <div class="setting-item">
+                        <div class="setting-info">
+                            <i class="fa-solid fa-key text-info"></i>
+                            <div>
+                                <strong>بيانات الدخول</strong>
+                                <span>إظهار الإيميل والباسورد</span>
+                            </div>
+                        </div>
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="toggleCredentials" checked>
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
+
+                    <div class="setting-item">
+                        <div class="setting-info">
+                            <i class="fa-solid fa-compress text-primary"></i>
+                            <div>
+                                <strong>الوضع المدمج للخطوط</strong>
+                                <span>يُصغِّر أحجام البطاقات والنصوص أكثر</span>
+                            </div>
+                        </div>
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="toggleCompactMode">
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
                 </div>
-                <div class="form-group mt-3" style="display:flex; align-items:center;">
-                    <label style="display:flex; align-items:center; gap:10px; cursor:pointer;">
-                        <input type="checkbox" id="toggleCredentials" checked style="width:18px;height:18px;margin:0;">
-                        <span>إظهار بيانات الدخول (الإيميل والباسورد)</span>
-                    </label>
-                </div>
-                <hr style="border-color: rgba(255,255,255,0.1); margin: 15px 0;">
-                <button class="btn btn-warning" id="btnCleanupDB" style="width:100%; border-radius: 8px;">
-                    <i class="fa-solid fa-broom"></i> تنظيف الخدمات المكررة ودمج Claude
+
+                <hr style="border-color: rgba(255,255,255,0.05); margin: 1.25rem 0;">
+                <button class="btn btn-danger" id="btnCleanupDB"
+                    style="width:100%; border-radius: 12px; padding: 0.75rem;">
+                    <i class="fa-solid fa-broom"></i> تنظيف الخدمات المكررة
                 </button>
             </div>
             <div class="modal-footer">
