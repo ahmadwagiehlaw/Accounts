@@ -242,13 +242,93 @@ document.addEventListener('DOMContentLoaded', () => {
     function closeModal(id) { document.getElementById(id).classList.remove('show'); }
 
     // ============================================================
-    //  NOTIFICATIONS
+    //  NOTIFICATIONS & PWA INSTALLATION
     // ============================================================
     const dismissNotif = document.getElementById('dismissNotification');
     if (dismissNotif) {
         dismissNotif.addEventListener('click', () => {
             const bar = document.getElementById('notificationBar');
             if (bar) bar.style.display = 'none';
+        });
+    }
+
+    // PWA Installation & iOS Handling
+    let deferredPrompt;
+    const pwaBanner = document.getElementById('pwaInstallBanner');
+    const iosPwaBanner = document.getElementById('iosPwaBanner');
+    const btnInstallPwa = document.getElementById('btnInstallPwa');
+    const btnDismissPwa = document.getElementById('btnDismissPwa');
+    const btnDismissIosPwa = document.getElementById('btnDismissIosPwa');
+
+    // Check if dismissed before
+    const isPwaDismissed = localStorage.getItem('submaster_pwa_dismissed') === 'true';
+
+    // Detect iOS and Standalone mode
+    const isIos = () => {
+        const userAgent = window.navigator.userAgent.toLowerCase();
+        return /iphone|ipad|ipod/.test(userAgent);
+    };
+
+    // Fallback detection for Safari on newer iPads which request desktop site
+    const isIosFallback = () => {
+        return window.navigator.maxTouchPoints &&
+            window.navigator.maxTouchPoints > 2 &&
+            /MacIntel/.test(window.navigator.platform);
+    };
+
+    const isStandalone = () => {
+        return window.navigator.standalone || window.matchMedia('(display-mode: standalone)').matches;
+    };
+
+    // Show iOS instruction if iOS and not Standalone
+    if ((isIos() || isIosFallback()) && !isStandalone() && !isPwaDismissed && iosPwaBanner) {
+        // Show after a short delay so user sees it clearly
+        setTimeout(() => {
+            iosPwaBanner.style.display = 'flex';
+        }, 1500);
+    }
+
+    if (btnDismissIosPwa) {
+        btnDismissIosPwa.addEventListener('click', () => {
+            if (iosPwaBanner) iosPwaBanner.style.display = 'none';
+            localStorage.setItem('submaster_pwa_dismissed', 'true');
+        });
+    }
+
+    // Standard Android/Chrome Install Prompt
+    window.addEventListener('beforeinstallprompt', (e) => {
+        // Prevent Chrome 67 and earlier from automatically showing the prompt
+        e.preventDefault();
+        // Stash the event so it can be triggered later.
+        deferredPrompt = e;
+
+        // Show banner if not dismissed yet
+        if (!isPwaDismissed && pwaBanner && !isIos() && !isIosFallback()) {
+            if (!isStandalone()) {
+                pwaBanner.style.display = 'flex';
+            }
+        }
+    });
+
+    if (btnInstallPwa) {
+        btnInstallPwa.addEventListener('click', async () => {
+            if (pwaBanner) pwaBanner.style.display = 'none';
+            if (deferredPrompt) {
+                // Show the install prompt
+                deferredPrompt.prompt();
+                // Wait for the user to respond to the prompt
+                const { outcome } = await deferredPrompt.userChoice;
+                console.log(`User response to the install prompt: ${outcome}`);
+                // We've used the prompt, and can't use it again, throw it away
+                deferredPrompt = null;
+            }
+        });
+    }
+
+    if (btnDismissPwa) {
+        btnDismissPwa.addEventListener('click', () => {
+            if (pwaBanner) pwaBanner.style.display = 'none';
+            localStorage.setItem('submaster_pwa_dismissed', 'true');
         });
     }
 

@@ -160,6 +160,46 @@
                 </button>
             </div>
 
+            <!-- PWA Install Banner -->
+            <div id="pwaInstallBanner" class="pwa-install-banner glass-panel" style="display:none;">
+                <div class="pwa-banner-content">
+                    <img src="assets/icon-192x192.png" alt="App Icon" class="pwa-banner-icon">
+                    <div class="pwa-banner-text">
+                        <h4>تثبيت التطبيق</h4>
+                        <p>قم بتثبيت SubMaster على شاشتك الرئيسية للوصول السريع بدون إنترنت.</p>
+                    </div>
+                </div>
+                <div class="pwa-banner-actions">
+                    <button class="btn btn-primary btn-sm" id="btnInstallPwa">تثبيت الآن</button>
+                    <button class="btn btn-secondary btn-sm" id="btnDismissPwa"><i
+                            class="fa-solid fa-times"></i></button>
+                </div>
+            </div>
+
+            <!-- iOS PWA Install Instruction -->
+            <div id="iosPwaBanner" class="pwa-install-banner glass-panel" style="display:none;">
+                <div class="pwa-banner-content" style="flex-direction: column; align-items: stretch; gap: 0.5rem;">
+                    <div style="display:flex; align-items:center; justify-content:space-between; width:100%;">
+                        <div style="display:flex; align-items:center; gap: 1rem;">
+                            <img src="assets/icon-192x192.png" alt="App Icon" class="pwa-banner-icon">
+                            <div class="pwa-banner-text">
+                                <h4>تثبيت التطبيق (iOS)</h4>
+                                <p>للحصول على أفضل تجربة، أضف التطبيق للشاشة الرئيسية.</p>
+                            </div>
+                        </div>
+                        <button class="btn btn-secondary btn-sm" id="btnDismissIosPwa"><i
+                                class="fa-solid fa-times"></i></button>
+                    </div>
+                    <div class="ios-instruction-steps"
+                        style="margin-top: 5px; font-size: 0.9rem; color: var(--text-light); background: rgba(255,255,255,0.05); padding: 10px; border-radius: 8px;">
+                        1. اضغط على زر المشاركة <i class="fa-solid fa-arrow-up-from-bracket mx-1 text-primary"></i> في
+                        أسفل المتصفح.<br>
+                        2. اختر <strong>"إضافة إلى الصفحة الرئيسية"</strong> (Add to Home Screen) <i
+                            class="fa-solid fa-square-plus mx-1 text-primary"></i>.
+                    </div>
+                </div>
+            </div>
+
             <div class="views-container">
 
                 <!-- ============ DASHBOARD ============ -->

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'submaster-v2';
+const CACHE_NAME = 'submaster-v3';
 const ASSETS = [
     './',
     './index.html',
@@ -9,7 +9,7 @@ const ASSETS = [
     './assets/icon-192x192.png',
     './assets/icon-512x512.png',
     'https://cdn.jsdelivr.net/npm/sweetalert2@11',
-    'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css',
+    'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css',
     'https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;500;700;800;900&display=swap'
 ];
 
