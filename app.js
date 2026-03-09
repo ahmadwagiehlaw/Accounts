@@ -1102,12 +1102,15 @@ document.addEventListener('DOMContentLoaded', () => {
     // ============================================================
     searchAccounts.addEventListener('input', renderAccounts);
     filterStatus.addEventListener('change', renderAccounts);
+    const filterPayment = document.getElementById('filterPayment');
+    if (filterPayment) { filterPayment.addEventListener('change', renderAccounts); }
 
     function renderAccounts() {
         const tableBody = document.querySelector('#accountsTable tbody');
         const emptyState = document.getElementById('accountsEmptyState');
         const searchTerm = searchAccounts.value.toLowerCase();
         const statusFilterVal = filterStatus.value;
+        const paymentFilterVal = filterPayment ? filterPayment.value : 'all';
         const accounts = DataManager.getAccounts();
 
         tableBody.innerHTML = '';
@@ -1136,14 +1139,19 @@ document.addEventListener('DOMContentLoaded', () => {
                 (acc.username || '').toLowerCase().includes(searchTerm);
 
             const matchesStatus = statusFilterVal === 'all' || statusInfo.status === statusFilterVal;
-            if (!matchesSearch || !matchesStatus) return;
+
+            const isPaid = acc.isPaid === true;
+            let matchesPayment = true;
+            if (paymentFilterVal === 'paid') matchesPayment = isPaid;
+            if (paymentFilterVal === 'unpaid') matchesPayment = !isPaid;
+
+            if (!matchesSearch || !matchesStatus || !matchesPayment) return;
             visibleCount++;
 
             const revenue = parseFloat(acc.revenue || 0);
             const refund = parseFloat(acc.refund || 0);
             const netRevenue = revenue - refund;
 
-            const isPaid = acc.isPaid === true;
             const paidBtn = `<button class="btn-icon toggle-paid-btn" data-id="${acc.id}" data-paid="${isPaid}" title="${isPaid ? 'تم السداد - اضغط للتغيير' : 'لم يسدد - اضغط للتغيير'}">
                 <i class="fa-solid ${isPaid ? 'fa-circle-check text-success' : 'fa-circle-xmark text-danger'}"></i>
             </button>`;

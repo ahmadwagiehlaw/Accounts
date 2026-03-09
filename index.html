@@ -357,12 +357,17 @@
                                 <input type="text" id="searchAccounts"
                                     placeholder="ابحث باسم العميل، الخدمة أو الهاتف...">
                             </div>
-                            <div class="filter-box">
-                                <select id="filterStatus" class="form-control">
-                                    <option value="all">كل الحالات</option>
+                            <div class="filter-box" style="display:flex; gap:0.5rem; flex-wrap:wrap;">
+                                <select id="filterStatus" class="form-control" style="min-width:130px;">
+                                    <option value="all">كل الحالات الزمنية</option>
                                     <option value="active">نشط</option>
                                     <option value="warning">قارب على الانتهاء</option>
                                     <option value="expired">منتهي</option>
+                                </select>
+                                <select id="filterPayment" class="form-control" style="min-width:130px;">
+                                    <option value="all">حالة السداد (الكل)</option>
+                                    <option value="unpaid">لم يسدد بعد</option>
+                                    <option value="paid">تم السداد</option>
                                 </select>
                             </div>
                         </div>
