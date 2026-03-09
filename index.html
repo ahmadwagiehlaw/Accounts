@@ -7,12 +7,12 @@
         content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>إدارة الاشتراكات والمبيعات - SubMaster</title>
     <meta name="description" content="تطبيق متقدم لإدارة الاشتراكات والحسابات والماليات سحابياً">
-    <link rel="manifest" href="manifest.json">
+    <link rel="manifest" href="manifest.json?v=4">
     <meta name="theme-color" content="#0b0f19">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="SubMaster">
-    <link rel="apple-touch-icon" href="assets/icon-192x192.png">
+    <link rel="apple-touch-icon" href="assets/icon-192x192.png?v=4">
     <link rel="stylesheet" href="styles.css">
     <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;500;700;800;900&display=swap"
         rel="stylesheet">
@@ -23,6 +23,11 @@
     <script src="https://www.gstatic.com/firebasejs/10.9.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.9.0/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.9.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.9.0/firebase-messaging-compat.js"></script>
+
+    <!-- External Libraries (Charts & PDF) -->
+    <script src="https://cdn.jsdelivr.net/npm/apexcharts"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 
     <script>
         const firebaseConfig = {
@@ -205,18 +210,7 @@
                 <!-- ============ DASHBOARD ============ -->
                 <section id="view-dashboard" class="view active">
 
-                    <!-- Welcome Banner -->
-                    <div class="welcome-banner mb-4"
-                        style="display:flex; justify-content:space-between; align-items:center;">
-                        <div class="welcome-text">
-                            <h2 id="welcomeMsg" style="margin:0; font-size:1.4rem;">مرحباً بك!</h2>
-                            <p id="welcomeDate" class="text-muted" style="margin:0; font-size:0.9rem;"></p>
-                        </div>
-                        <div class="welcome-icon"
-                            style="font-size:2rem; color:var(--primary-color); animation: wave 2s infinite; transform-origin: bottom right;">
-                            👋
-                        </div>
-                    </div>
+
 
                     <!-- Smart Wallet Card -->
                     <div class="wallet-card glass-panel mb-4">
@@ -280,11 +274,20 @@
                             </div>
                         </div>
                     </div>
-                    <div class="dashboard-charts-area glass-panel">
-                        <div class="section-header">
-                            <h2><i class="fa-solid fa-chart-line"></i> توزيع الاشتراكات حسب الخدمة</h2>
+                    <div class="dashboard-charts-area glass-panel mb-4">
+                        <div class="section-header"
+                            style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
+                            <h2 id="chartTitle"><i class="fa-solid fa-chart-pie"></i> توزيع الاشتراكات</h2>
+                            <div class="chart-tabs border-glass"
+                                style="display:flex; gap:5px; background:rgba(255,255,255,0.05); padding:3px; border-radius:6px;">
+                                <button class="btn btn-sm btn-primary" id="btnTabDonut"
+                                    style="padding:0.25rem 0.5rem;"><i class="fa-solid fa-chart-pie"></i></button>
+                                <button class="btn btn-sm btn-secondary" id="btnTabArea"
+                                    style="padding:0.25rem 0.5rem;"><i class="fa-solid fa-chart-area"></i></button>
+                            </div>
                         </div>
-                        <div class="overview-content" id="dashboard-overview"></div>
+                        <div id="apexDonutChart" style="min-height: 300px; width: 100%;"></div>
+                        <div id="apexAreaChart" style="min-height: 300px; width: 100%; display: none;"></div>
                     </div>
                     <div class="dashboard-recent glass-panel">
                         <div class="section-header">
@@ -893,6 +896,67 @@
         </div>
     </div>
 
+    <!-- Invoice Modal -->
+    <div class="modal" id="invoiceModal">
+        <div class="modal-content glass-panel" style="max-width: 500px;">
+            <div class="modal-header">
+                <h3 id="invoiceModalTitle"><i class="fa-solid fa-file-invoice-dollar text-primary"></i> فاتورة اشتراك
+                </h3>
+                <button class="btn-icon" data-dismiss="invoiceModal"><i class="fa-solid fa-times"></i></button>
+            </div>
+            <div class="modal-body" style="padding: 1.5rem;">
+                <div id="invoicePrintArea"
+                    style="background:#fff; color:#0b0f19; padding:2rem; border-radius:8px; font-family:'Tajawal', sans-serif;">
+                    <div
+                        style="text-align:center; margin-bottom:1.5rem; border-bottom:2px solid #eee; padding-bottom:1rem;">
+                        <h2 id="invoiceCompanyName" style="margin:0; font-size:1.8rem; font-weight:800; color:#4f46e5;">
+                            SubMaster</h2>
+                        <p style="margin:0; color:#666;">إيصال سداد اشتراك</p>
+                    </div>
+                    <div style="display:flex; justify-content:space-between; margin-bottom:1.5rem; font-size:0.95rem;">
+                        <div>
+                            <strong>رقم الفاتورة:</strong> <span id="invNumber"></span><br>
+                            <strong>التاريخ:</strong> <span id="invDate"></span>
+                        </div>
+                        <div style="text-align:left;">
+                            <strong>العميل:</strong> <span id="invCustomerName"></span><br>
+                            <strong>الموبايل:</strong> <span id="invCustomerPhone"></span>
+                        </div>
+                    </div>
+                    <table style="width:100%; border-collapse:collapse; margin-bottom:2rem;">
+                        <thead>
+                            <tr style="background:#f8fafc; border-bottom:1px solid #e2e8f0;">
+                                <th style="padding:10px; text-align:right;">وصف الخدمة</th>
+                                <th style="padding:10px; text-align:left;">المدة</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr style="border-bottom:1px solid #e2e8f0;">
+                                <td style="padding:10px;" id="invPlatformName"></td>
+                                <td style="padding:10px; text-align:left;" id="invDuration"></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                    <div
+                        style="display:flex; justify-content:space-between; align-items:center; background:#4f46e5; color:#fff; padding:15px; border-radius:8px;">
+                        <strong style="font-size:1.1rem;">الإجمالي:</strong>
+                        <strong style="font-size:1.4rem;" id="invTotalAmount">0 ج.م</strong>
+                    </div>
+                    <p style="text-align:center; padding-top:20px; font-size:0.85rem; color:#888;">نشكركم لثقتكم بنا!
+                    </p>
+                </div>
+                <div class="mt-4" style="display:flex; gap:10px; justify-content:center;">
+                    <button class="btn btn-primary" id="btnDownloadInvoice"><i class="fa-solid fa-download"></i> تحميل
+                        PDF</button>
+                    <button class="btn btn-secondary"
+                        onclick="document.getElementById('invoiceCompanyName').contentEditable=true; document.getElementById('invoiceCompanyName').focus();"><i
+                            class="fa-solid fa-pen"></i> تعديل اسم الشركة</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scripts -->
     <script src="data.js"></script>
     <script src="app.js"></script>
 </body>

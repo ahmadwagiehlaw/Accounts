@@ -145,6 +145,68 @@ h6 {
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.05);
 }
 
+/* ======== Skeleton Loaders ======== */
+@keyframes skeleton-shimmer {
+    0% {
+        background-position: -200% 0;
+    }
+
+    100% {
+        background-position: 200% 0;
+    }
+}
+
+.skeleton {
+    background: linear-gradient(90deg, rgba(255, 255, 255, 0.03) 25%, rgba(255, 255, 255, 0.08) 50%, rgba(255, 255, 255, 0.03) 75%);
+    background-size: 200% 100%;
+    animation: skeleton-shimmer 1.5s infinite linear;
+    border-radius: 6px;
+    color: transparent !important;
+    pointer-events: none;
+    user-select: none;
+    overflow: hidden;
+}
+
+.skeleton * {
+    visibility: hidden;
+}
+
+.skeleton-text {
+    height: 14px;
+    margin-bottom: 8px;
+    border-radius: 4px;
+}
+
+.skeleton-circle {
+    border-radius: 50%;
+}
+
+.skeleton-box {
+    height: 100px;
+    border-radius: 12px;
+}
+
+/* ======== Utility Buttons ======== */
+.btn-whatsapp {
+    color: #25D366 !important;
+    background: rgba(37, 211, 102, 0.1) !important;
+    border: 1px solid rgba(37, 211, 102, 0.3) !important;
+}
+
+.btn-whatsapp:hover {
+    background: rgba(37, 211, 102, 0.2) !important;
+}
+
+.btn-invoice {
+    color: #eab308 !important;
+    background: rgba(234, 179, 8, 0.1) !important;
+    border: 1px solid rgba(234, 179, 8, 0.3) !important;
+}
+
+.btn-invoice:hover {
+    background: rgba(234, 179, 8, 0.2) !important;
+}
+
 /* ======== App Layout ======== */
 .app-container {
     display: flex;

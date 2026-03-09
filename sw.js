@@ -1,4 +1,4 @@
-const CACHE_NAME = 'submaster-v3';
+const CACHE_NAME = 'submaster-v4';
 const ASSETS = [
     './',
     './index.html',

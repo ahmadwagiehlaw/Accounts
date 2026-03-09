@@ -2,7 +2,7 @@
     "name": "SubMaster - إدارة الاشتراكات",
     "short_name": "SubMaster",
     "description": "تطبيق متقدم لإدارة الاشتراكات والحسابات والماليات سحابياً",
-    "start_url": "/index.html",
+    "start_url": "./index.html",
     "display": "standalone",
     "background_color": "#0b0f19",
     "theme_color": "#0b0f19",

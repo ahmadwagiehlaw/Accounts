@@ -84,6 +84,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Refresh views on Firestore data change
     window.addEventListener('dataChanged', () => {
+        window.isDataLoaded = true;
         globalLoader.classList.add('fade-out');
         checkNotifications();
         const activeItem = document.querySelector('.nav-item.active') || document.querySelector('.b-nav-item.active');
@@ -379,25 +380,47 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         list.innerHTML = html;
+
+        // Trigger Local OS Notification once per day if enabled
+        if ('Notification' in window) {
+            if (Notification.permission === 'default') {
+                Notification.requestPermission();
+            }
+            if (Notification.permission === 'granted') {
+                const notifiedKey = 'submaster_notified_' + new Date().toDateString();
+                if (!localStorage.getItem(notifiedKey)) {
+                    new Notification('SubMaster - تنبيهات الاشتراكات', {
+                        body: `لديك ${total} اشتراك بحاجة للمتابعة (منتهية أو قاربت على الانتهاء).`,
+                        icon: 'assets/icon-192x192.png'
+                    });
+                    localStorage.setItem(notifiedKey, 'true');
+                }
+            }
+        }
     }
 
     // ============================================================
     //  DASHBOARD
     // ============================================================
     function renderDashboard() {
-        // Welcome Banner Logic
-        const welcomeDate = document.getElementById('welcomeDate');
-        const welcomeMsg = document.getElementById('welcomeMsg');
-        if (welcomeDate && welcomeMsg) {
-            const now = new Date();
-            const hour = now.getHours();
-            let greeting = 'مرحباً بك!';
-            if (hour < 12) greeting = 'صباح الخير ☀️';
-            else if (hour < 18) greeting = 'مساء الخير 🌤️';
-            else greeting = 'مساء الخير 🌙';
+        // Welcome Greeting in Top Bar
+        const pageTitle = document.getElementById('pageTitle');
+        const now = new Date();
+        const hour = now.getHours();
+        let greeting = 'مرحباً بك!';
+        if (hour < 12) greeting = 'صباح الخير ☀️';
+        else if (hour < 18) greeting = 'مساء الخير 🌤️';
+        else greeting = 'مساء الخير 🌙';
 
-            welcomeMsg.innerText = greeting;
-            welcomeDate.innerText = now.toLocaleDateString('ar-EG', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+        const dateStr = now.toLocaleDateString('ar-EG', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+
+        if (pageTitle) {
+            pageTitle.innerHTML = `
+                <div style="line-height:1.2;">
+                    <div style="font-size:1.1rem;font-weight:700;color:var(--text-light);">${greeting} <span style="display:inline-block;animation: wave 2s infinite;transform-origin: bottom right;">👋</span></div>
+                    <div style="font-size:0.75rem;color:var(--text-muted);font-weight:normal;">${dateStr}</div>
+                </div>
+            `;
         }
 
         const stats = DataManager.calculateStats();
@@ -421,26 +444,74 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('stat-warning-count').textContent = warningCount;
         document.getElementById('stat-expired-count').textContent = expiredCount;
 
-        const overviewContainer = document.getElementById('dashboard-overview');
-        if (accounts.length === 0) {
-            overviewContainer.innerHTML = '<p class="text-muted text-center" style="padding:2rem 0;width:100%;">لا توجد بيانات كافية لاستعراض التحليلات.</p>';
+        // Skeletons while loading
+        if (!window.isDataLoaded) {
+            document.getElementById('apexDonutChart').innerHTML = '<div class="skeleton skeleton-box" style="height:300px;"></div>';
+            document.getElementById('apexAreaChart').innerHTML = '<div class="skeleton skeleton-box" style="height:300px;"></div>';
+            return;
+        }
+
+        const platformCounts = {};
+        accounts.forEach(acc => {
+            platformCounts[acc.platformId] = (platformCounts[acc.platformId] || 0) + 1;
+        });
+
+        const platformLabels = [];
+        const platformSeries = [];
+        const platformColors = [];
+
+        Object.keys(platformCounts).forEach(pid => {
+            const p = DataManager.getPlatformById(pid);
+            if (p) {
+                platformLabels.push(p.name);
+                platformSeries.push(platformCounts[pid]);
+                platformColors.push(p.color);
+            }
+        });
+
+        if (platformSeries.length > 0) {
+            if (!window.donutChartInstance) {
+                const donutOptions = {
+                    series: platformSeries,
+                    labels: platformLabels,
+                    chart: { type: 'donut', height: 320, background: 'transparent' },
+                    theme: { mode: 'dark' },
+                    colors: platformColors,
+                    stroke: { show: true, colors: ['#0b0f19'], width: 2 },
+                    dataLabels: { enabled: false },
+                    legend: { position: 'bottom', fontSize: '14px', fontFamily: 'Tajawal', markers: { radius: 12 } }
+                };
+                window.donutChartInstance = new ApexCharts(document.querySelector("#apexDonutChart"), donutOptions);
+                window.donutChartInstance.render();
+            } else {
+                window.donutChartInstance.updateOptions({ labels: platformLabels, colors: platformColors });
+                window.donutChartInstance.updateSeries(platformSeries);
+            }
         } else {
-            const platformCounts = {};
-            accounts.forEach(acc => {
-                platformCounts[acc.platformId] = (platformCounts[acc.platformId] || 0) + 1;
-            });
-            let html = '';
-            Object.keys(platformCounts).forEach(pid => {
-                const p = DataManager.getPlatformById(pid);
-                if (p) {
-                    html += `<div class="platform-stat-card">
-                        <i class="${escapeHtml(p.icon)}" style="color:${escapeHtml(p.color)};"></i>
-                        <h4>${escapeHtml(p.name)}</h4>
-                        <div class="count">${platformCounts[pid]} حساب</div>
-                    </div>`;
-                }
-            });
-            overviewContainer.innerHTML = html;
+            document.querySelector("#apexDonutChart").innerHTML = '<p class="text-muted text-center" style="padding:2rem 0;width:100%;">لا توجد بيانات كافية لاستعراض التحليلات.</p>';
+            if (window.donutChartInstance) { window.donutChartInstance.destroy(); window.donutChartInstance = null; }
+        }
+
+        // Mock Area Chart based on total revenue points
+        if (accounts.length > 0) {
+            if (!window.areaChartInstance) {
+                const areaOptions = {
+                    series: [{ name: 'الإيرادات المتوقعة', data: [10, 41, 35, 51, 49, 62, 69, 91, 148] }],
+                    chart: { type: 'area', height: 320, background: 'transparent', toolbar: { show: false } },
+                    theme: { mode: 'dark' },
+                    colors: ['#8b5cf6'],
+                    fill: { type: 'gradient', gradient: { shadeIntensity: 1, opacityFrom: 0.7, opacityTo: 0.1, stops: [0, 90, 100] } },
+                    dataLabels: { enabled: false },
+                    stroke: { curve: 'smooth', width: 2 },
+                    xaxis: { categories: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep'] },
+                    tooltip: { theme: 'dark', y: { formatter: function (val) { return val + " اشتراك" } } }
+                };
+                window.areaChartInstance = new ApexCharts(document.querySelector("#apexAreaChart"), areaOptions);
+                window.areaChartInstance.render();
+            }
+        } else {
+            document.querySelector("#apexAreaChart").innerHTML = '<p class="text-muted text-center" style="padding:2rem 0;width:100%;">لا توجد بيانات كافية لاستعراض التحليلات.</p>';
+            if (window.areaChartInstance) { window.areaChartInstance.destroy(); window.areaChartInstance = null; }
         }
 
         const recentContainer = document.getElementById('recent-accounts-list');
@@ -461,11 +532,36 @@ document.addEventListener('DOMContentLoaded', () => {
                     </div>
                     <div class="info">
                         <strong>${escapeHtml(custName)}</strong> — ${p ? escapeHtml(p.name) : 'غير محدد'}
-                        <small>${acc.startDate} • ${acc.durationDays} يوم • <span class="status-badge status-${statusInfo.status}">${statusInfo.label}</span></small>
+                        <small style="display:block;margin-top:2px;">
+                            ${acc.startDate} • 
+                            <span class="${statusInfo.daysLeft <= 7 ? 'text-danger' : 'text-warning'}" style="font-weight:bold;">متبقي ${statusInfo.daysLeft} يوم</span> • 
+                            <span class="status-badge status-${statusInfo.status}">${statusInfo.label}</span>
+                        </small>
                     </div>
                 </div>`;
             });
             recentContainer.innerHTML = html;
+        }
+
+        const btnTabDonut = document.getElementById('btnTabDonut');
+        const btnTabArea = document.getElementById('btnTabArea');
+        const chartTitle = document.getElementById('chartTitle');
+        if (btnTabDonut && !btnTabDonut.hasAttribute('data-bound')) {
+            btnTabDonut.setAttribute('data-bound', 'true');
+            btnTabDonut.addEventListener('click', () => {
+                document.getElementById('apexDonutChart').style.display = 'block';
+                document.getElementById('apexAreaChart').style.display = 'none';
+                btnTabDonut.classList.replace('btn-secondary', 'btn-primary');
+                btnTabArea.classList.replace('btn-primary', 'btn-secondary');
+                if (chartTitle) chartTitle.innerHTML = '<i class="fa-solid fa-chart-pie"></i> توزيع الاشتراكات';
+            });
+            btnTabArea.addEventListener('click', () => {
+                document.getElementById('apexDonutChart').style.display = 'none';
+                document.getElementById('apexAreaChart').style.display = 'block';
+                btnTabArea.classList.replace('btn-secondary', 'btn-primary');
+                btnTabDonut.classList.replace('btn-primary', 'btn-secondary');
+                if (chartTitle) chartTitle.innerHTML = '<i class="fa-solid fa-chart-area"></i> ملخص الإيرادات';
+            });
         }
     }
 
@@ -1078,8 +1174,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 <td data-label="التاريخ/المدة">
                     <div>${acc.startDate || '-'}</div>
                     <div class="text-primary" style="font-size:0.82rem;font-weight:700;">
-                        ${acc.durationDays} يوم
-                        <span class="text-muted">(${statusInfo.daysLeft} متبقي)</span>
+                        ${acc.durationDays} يوم إجمالي
+                        <div class="${statusInfo.daysLeft <= 7 ? 'text-danger' : 'text-warning'}" style="font-size:0.9rem; margin-top:2px;">
+                            (متبقي ${statusInfo.daysLeft} يوم)
+                        </div>
                     </div>
                 </td>
                 <td data-label="الماليات" class="col-financials">
@@ -1096,6 +1194,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     <div class="actions-cell">
                         <button class="btn-icon edit-acc-btn" data-id="${acc.id}" title="تعديل"><i class="fa-solid fa-pen text-info"></i></button>
                         <button class="btn-icon delete-acc-btn" data-id="${acc.id}" title="حذف"><i class="fa-solid fa-trash text-danger"></i></button>
+                        <button class="btn-icon text-success whatsapp-acc-btn" data-id="${acc.id}" title="مراسلة عبر واتساب"><i class="fa-brands fa-whatsapp"></i></button>
+                        <button class="btn-icon text-warning invoice-acc-btn" data-id="${acc.id}" title="توليد فاتورة"><i class="fa-solid fa-file-invoice-dollar"></i></button>
                     </div>
                 </td>`;
             tableBody.appendChild(tr);
@@ -1113,6 +1213,12 @@ document.addEventListener('DOMContentLoaded', () => {
         tableBody.querySelectorAll('.show-creds-btn').forEach(btn => {
             btn.addEventListener('click', () => showCredentials(btn.dataset.id));
         });
+        tableBody.querySelectorAll('.whatsapp-acc-btn').forEach(btn => {
+            btn.addEventListener('click', () => openWhatsAppAccount(btn.dataset.id));
+        });
+        tableBody.querySelectorAll('.invoice-acc-btn').forEach(btn => {
+            btn.addEventListener('click', () => showInvoice(btn.dataset.id));
+        });
 
         if (visibleCount === 0) {
             emptyState.style.display = 'block';
@@ -1121,6 +1227,60 @@ document.addEventListener('DOMContentLoaded', () => {
             emptyState.style.display = 'none';
             document.querySelector('#accountsTable').style.display = 'table';
         }
+    }
+
+    function openWhatsAppAccount(id) {
+        const acc = DataManager.getAccounts().find(a => a.id === id);
+        if (!acc) return;
+        const cust = DataManager.getCustomerById(acc.customerId);
+        const platform = DataManager.getPlatformById(acc.platformId);
+        const pName = platform ? platform.name : 'الخدمة';
+        const cPhone = cust ? cust.phone : acc.customerPhone;
+        const cName = cust ? cust.name : acc.customerName;
+
+        if (!cPhone) {
+            Swal.fire({ icon: 'error', title: 'عفواً', text: 'لا يوجد رقم هاتف مسجل لهذا العميل', background: '#111827', color: '#fff' });
+            return;
+        }
+
+        let phone = cPhone.replace(/\s+/g, '').replace(/[^0-9+]/g, '');
+        if (phone.startsWith('01')) phone = '+20' + phone.substring(1);
+
+        const msg = encodeURIComponent(`مرحباً أ. ${cName}،\nنذكركم بانتهاء اشتراككم في خدمة (${pName}) قريباً.\nيرجى التجديد لضمان استمرار الخدمة. شكراً لاختياركم لنا!`);
+        window.open(`https://wa.me/${phone}?text=${msg}`, '_blank');
+    }
+
+    function showInvoice(id) {
+        const acc = DataManager.getAccounts().find(a => a.id === id);
+        if (!acc) return;
+        const cust = DataManager.getCustomerById(acc.customerId);
+        const platform = DataManager.getPlatformById(acc.platformId);
+
+        document.getElementById('invNumber').innerText = '#' + acc.id.substring(0, 6).toUpperCase();
+        document.getElementById('invDate').innerText = new Date(acc.startDate || Date.now()).toLocaleDateString('ar-EG');
+        document.getElementById('invCustomerName').innerText = cust ? cust.name : (acc.customerName || '—');
+        document.getElementById('invCustomerPhone').innerText = cust ? cust.phone : (acc.customerPhone || '—');
+        document.getElementById('invPlatformName').innerText = platform ? platform.name : '—';
+        document.getElementById('invDuration').innerText = acc.durationDays + ' يوم';
+        document.getElementById('invTotalAmount').innerText = Number(acc.revenue).toLocaleString('ar-EG') + ' ج.م';
+
+        openModal('invoiceModal');
+    }
+
+    const btnDownloadInvoice = document.getElementById('btnDownloadInvoice');
+    if (btnDownloadInvoice) {
+        btnDownloadInvoice.addEventListener('click', () => {
+            const element = document.getElementById('invoicePrintArea');
+            const invNum = document.getElementById('invNumber').innerText;
+            const opt = {
+                margin: [0.5, 0.5, 0.5, 0.5],
+                filename: `Invoice_${invNum}.pdf`,
+                image: { type: 'jpeg', quality: 0.98 },
+                html2canvas: { scale: 2, useCORS: true },
+                jsPDF: { unit: 'in', format: 'a5', orientation: 'portrait' }
+            };
+            html2pdf().set(opt).from(element).save();
+        });
     }
 
     function toggleAccountPaid(id, currentPaid) {
