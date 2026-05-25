@@ -569,6 +569,7 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('stat-active-count').textContent = activeCount;
         document.getElementById('stat-warning-count').textContent = warningCount;
         document.getElementById('stat-expired-count').textContent = expiredCount;
+        renderFollowUpCenter(accounts);
 
         // Skeletons while loading
         if (!window.isDataLoaded) {
@@ -689,6 +690,102 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (chartTitle) chartTitle.innerHTML = '<i class="fa-solid fa-chart-area"></i> ملخص الإيرادات';
             });
         }
+    }
+
+    function renderFollowUpCenter(accounts) {
+        const warningList = document.getElementById('followup-warning-list');
+        const expiredList = document.getElementById('followup-expired-list');
+        const unpaidList = document.getElementById('followup-unpaid-list');
+        if (!warningList || !expiredList || !unpaidList) return;
+
+        const activeAccounts = accounts.filter(acc => DataManager.getAccountStatus(acc).status !== 'closed');
+        const warningAccounts = activeAccounts.filter(acc => DataManager.getAccountStatus(acc).status === 'warning');
+        const expiredAccounts = activeAccounts.filter(acc => DataManager.getAccountStatus(acc).status === 'expired');
+        const unpaidAccounts = activeAccounts.filter(acc => acc.isPaid !== true);
+
+        document.getElementById('followup-warning-count').textContent = warningAccounts.length;
+        document.getElementById('followup-expired-count').textContent = expiredAccounts.length;
+        document.getElementById('followup-unpaid-count').textContent = unpaidAccounts.length;
+
+        warningList.innerHTML = renderFollowUpItems(warningAccounts, 'warning');
+        expiredList.innerHTML = renderFollowUpItems(expiredAccounts, 'expired');
+        unpaidList.innerHTML = renderFollowUpItems(unpaidAccounts, 'unpaid');
+        bindFollowUpActions(document.getElementById('view-dashboard'));
+    }
+
+    function renderFollowUpItems(items, groupType) {
+        if (items.length === 0) {
+            return '<div class="followup-empty">لا توجد عناصر تحتاج متابعة</div>';
+        }
+
+        return items.map(acc => {
+            const statusInfo = DataManager.getAccountStatus(acc);
+            const customer = DataManager.getCustomerById(acc.customerId);
+            const platform = DataManager.getPlatformById(acc.platformId);
+            const custName = customer ? customer.name : (acc.customerName || 'غير محدد');
+            const platName = platform ? platform.name : 'غير محدد';
+            const phone = customer ? customer.phone : (acc.customerPhone || '');
+            const isPaid = acc.isPaid === true;
+            const timingText = getFollowUpTimingText(acc, statusInfo);
+            const paymentLabel = isPaid ? 'تم السداد' : 'غير مسدد';
+            const paymentClass = isPaid ? 'text-success' : 'text-danger';
+            const canClose = statusInfo.status === 'expired';
+            const canMarkPaid = !isPaid;
+
+            return `<div class="followup-item">
+                <div class="followup-main">
+                    <div class="followup-title">
+                        <strong>${escapeHtml(custName)}</strong>
+                        <span>${escapeHtml(platName)}</span>
+                    </div>
+                    <div class="followup-meta">
+                        <span class="status-badge status-${statusInfo.status}">${statusInfo.label}</span>
+                        <span>${escapeHtml(timingText)}</span>
+                        <span class="${paymentClass}">${paymentLabel}</span>
+                    </div>
+                </div>
+                <div class="followup-actions">
+                    <button class="btn-icon followup-renew-btn" data-id="${escapeAttr(acc.id)}" title="تجديد"><i class="fa-solid fa-rotate-right text-primary"></i></button>
+                    ${canClose ? `<button class="btn-icon followup-close-btn" data-id="${escapeAttr(acc.id)}" title="إغلاق"><i class="fa-solid fa-circle-stop text-danger"></i></button>` : ''}
+                    ${phone ? `<button class="btn-icon followup-whatsapp-btn" data-id="${escapeAttr(acc.id)}" title="واتساب"><i class="fa-brands fa-whatsapp text-success"></i></button>` : ''}
+                    <button class="btn-icon followup-invoice-btn" data-id="${escapeAttr(acc.id)}" title="فاتورة"><i class="fa-solid fa-file-invoice-dollar text-warning"></i></button>
+                    ${canMarkPaid ? `<button class="btn-icon followup-paid-btn" data-id="${escapeAttr(acc.id)}" title="تعليم كمدفوع"><i class="fa-solid fa-circle-check text-success"></i></button>` : ''}
+                </div>
+            </div>`;
+        }).join('');
+    }
+
+    function getFollowUpTimingText(acc, statusInfo) {
+        if (statusInfo.status === 'expired') {
+            const startDate = new Date(acc.startDate);
+            const endDate = new Date(startDate);
+            endDate.setDate(endDate.getDate() + parseInt(acc.durationDays || 30));
+            const expiredDays = Math.max(1, Math.floor((new Date() - endDate) / (1000 * 60 * 60 * 24)));
+            return `منتهي منذ ${expiredDays} يوم`;
+        }
+        if (statusInfo.status === 'warning') {
+            return `متبقي ${statusInfo.daysLeft} يوم`;
+        }
+        return `متبقي ${statusInfo.daysLeft} يوم`;
+    }
+
+    function bindFollowUpActions(container) {
+        if (!container) return;
+        container.querySelectorAll('.followup-renew-btn').forEach(btn => {
+            btn.addEventListener('click', () => renewAccountFromUi(btn.dataset.id));
+        });
+        container.querySelectorAll('.followup-close-btn').forEach(btn => {
+            btn.addEventListener('click', () => closeAccountFromUi(btn.dataset.id));
+        });
+        container.querySelectorAll('.followup-whatsapp-btn').forEach(btn => {
+            btn.addEventListener('click', () => openWhatsAppAccount(btn.dataset.id));
+        });
+        container.querySelectorAll('.followup-invoice-btn').forEach(btn => {
+            btn.addEventListener('click', () => showInvoice(btn.dataset.id));
+        });
+        container.querySelectorAll('.followup-paid-btn').forEach(btn => {
+            btn.addEventListener('click', () => toggleAccountPaid(btn.dataset.id, false));
+        });
     }
 
     // ============================================================
@@ -1434,6 +1531,7 @@ document.addEventListener('DOMContentLoaded', () => {
         DataManager.updateAccountPaid(id, !currentPaid);
         renderAccounts();
         checkNotifications();
+        if (document.getElementById('view-dashboard').classList.contains('active')) renderDashboard();
     }
 
     async function closeAccountFromUi(id) {
