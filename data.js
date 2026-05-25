@@ -287,6 +287,8 @@ class DataManager {
 
     static async closeAccount(id, reason = 'expired') {
         const acc = this.accounts.find(a => a.id === id);
+        if (!acc) return;
+        const previous = { ...acc };
         const closedAt = new Date().toISOString();
         const closedBy = window.firebaseApp && window.firebaseApp.auth && window.firebaseApp.auth.currentUser
             ? window.firebaseApp.auth.currentUser.email || ''
@@ -298,16 +300,23 @@ class DataManager {
             closedBy
         };
 
-        if (acc) Object.assign(acc, patch);
+        Object.assign(acc, patch);
         localStorage.setItem(ACCOUNTS_KEY, JSON.stringify(this.accounts));
         if (!this.isFirebaseReady) return;
-        const ref = window.firebaseApp.doc(window.firebaseApp.db, "accounts", id);
-        await window.firebaseApp.updateDoc(ref, patch);
+        try {
+            const ref = window.firebaseApp.doc(window.firebaseApp.db, "accounts", id);
+            await window.firebaseApp.updateDoc(ref, patch);
+        } catch (error) {
+            Object.assign(acc, previous);
+            localStorage.setItem(ACCOUNTS_KEY, JSON.stringify(this.accounts));
+            throw error;
+        }
     }
 
     static async renewAccount(id, options = {}) {
         const acc = this.accounts.find(a => a.id === id);
         if (!acc) return;
+        const previous = { ...acc };
 
         const startDate = options.startDate || new Date().toISOString().split('T')[0];
         const durationDays = options.durationDays || acc.durationDays || 30;
@@ -327,8 +336,14 @@ class DataManager {
         Object.assign(acc, patch);
         localStorage.setItem(ACCOUNTS_KEY, JSON.stringify(this.accounts));
         if (!this.isFirebaseReady) return;
-        const ref = window.firebaseApp.doc(window.firebaseApp.db, "accounts", id);
-        await window.firebaseApp.updateDoc(ref, patch);
+        try {
+            const ref = window.firebaseApp.doc(window.firebaseApp.db, "accounts", id);
+            await window.firebaseApp.updateDoc(ref, patch);
+        } catch (error) {
+            Object.assign(acc, previous);
+            localStorage.setItem(ACCOUNTS_KEY, JSON.stringify(this.accounts));
+            throw error;
+        }
     }
 
     // ==================== NOTIFICATIONS ====================

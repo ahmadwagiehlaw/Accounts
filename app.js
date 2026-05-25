@@ -16,28 +16,47 @@ document.addEventListener('DOMContentLoaded', () => {
     const filterStatus = document.getElementById('filterStatus');
     const searchCustomers = document.getElementById('searchCustomers');
 
-    function bindNotificationActions() {
-        document.querySelectorAll('.notif-renew-btn').forEach(btn => {
+    function bindNotificationActions(container) {
+        if (!container) return;
+        container.querySelectorAll('.notif-renew-btn').forEach(btn => {
             btn.addEventListener('click', (e) => {
                 e.preventDefault();
                 e.stopPropagation();
                 renewAccountFromUi(btn.dataset.id);
             });
         });
-        document.querySelectorAll('.notif-close-btn').forEach(btn => {
+        container.querySelectorAll('.notif-close-btn').forEach(btn => {
             btn.addEventListener('click', (e) => {
                 e.preventDefault();
                 e.stopPropagation();
                 closeAccountFromUi(btn.dataset.id);
             });
         });
-        document.querySelectorAll('.notif-whatsapp-btn').forEach(btn => {
+        container.querySelectorAll('.notif-whatsapp-btn').forEach(btn => {
             btn.addEventListener('click', (e) => {
                 e.preventDefault();
                 e.stopPropagation();
                 openWhatsAppAccount(btn.dataset.id);
             });
         });
+    }
+
+    function triggerDailyLocalNotification(total) {
+        if ('Notification' in window) {
+            if (Notification.permission === 'default') {
+                Notification.requestPermission();
+            }
+            if (Notification.permission === 'granted') {
+                const notifiedKey = 'submaster_notified_' + new Date().toDateString();
+                if (!localStorage.getItem(notifiedKey)) {
+                    new Notification('SubMaster - تنبيهات الاشتراكات', {
+                        body: `لديك ${total} اشتراك بحاجة للمتابعة (منتهية أو قاربت على الانتهاء).`,
+                        icon: 'assets/icon-192x192.png'
+                    });
+                    localStorage.setItem(notifiedKey, 'true');
+                }
+            }
+        }
     }
 
     // ============================================================
@@ -387,9 +406,49 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         bar.style.display = 'flex';
+        let notificationHtml = '';
+
+        expired.forEach(n => {
+            const acc = DataManager.getAccounts().find(a => a.id === n.id);
+            const cust = acc ? DataManager.getCustomerById(acc.customerId) : null;
+            const hasPhone = !!(cust && cust.phone) || !!(acc && acc.customerPhone);
+            notificationHtml += `<span class="notif-item notif-expired">
+                <i class="fa-solid fa-circle-xmark"></i>
+                <strong>${escapeHtml(n.custName)}</strong> — ${escapeHtml(n.platName)}: انتهى الاشتراك
+                <span class="notif-actions">
+                    <button class="notif-action-btn notif-renew-btn" data-id="${escapeAttr(n.id)}" type="button">تجديد</button>
+                    <button class="notif-action-btn notif-close-btn" data-id="${escapeAttr(n.id)}" type="button">إغلاق</button>
+                    ${hasPhone ? `<button class="notif-action-btn notif-whatsapp-btn" data-id="${escapeAttr(n.id)}" type="button"><i class="fa-brands fa-whatsapp"></i></button>` : ''}
+                </span>
+            </span>`;
+        });
+
+        expiring.forEach(n => {
+            const acc = DataManager.getAccounts().find(a => a.id === n.id);
+            const cust = acc ? DataManager.getCustomerById(acc.customerId) : null;
+            const hasPhone = !!(cust && cust.phone) || !!(acc && acc.customerPhone);
+            notificationHtml += `<span class="notif-item notif-warning">
+                <i class="fa-solid fa-triangle-exclamation"></i>
+                <strong>${escapeHtml(n.custName)}</strong> — ${escapeHtml(n.platName)}: يتبقى ${n.daysLeft} يوم
+                <span class="notif-actions">
+                    <button class="notif-action-btn notif-renew-btn" data-id="${escapeAttr(n.id)}" type="button">تجديد</button>
+                    ${hasPhone ? `<button class="notif-action-btn notif-whatsapp-btn" data-id="${escapeAttr(n.id)}" type="button"><i class="fa-brands fa-whatsapp"></i></button>` : ''}
+                </span>
+            </span>`;
+        });
+
+        list.innerHTML = notificationHtml;
+        bindNotificationActions(list);
+        triggerDailyLocalNotification(total);
+        return;
+
+        bar.style.display = 'flex';
         let html = '';
 
         expired.forEach(n => {
+            const acc = DataManager.getAccounts().find(a => a.id === n.id);
+            const cust = acc ? DataManager.getCustomerById(acc.customerId) : null;
+            const hasPhone = !!(cust && cust.phone) || !!(acc && acc.customerPhone);
             html += `<span class="notif-item notif-expired">
                 <i class="fa-solid fa-circle-xmark"></i>
                 <strong>${escapeHtml(n.custName)}</strong> — ${escapeHtml(n.platName)}: انتهى الاشتراك
@@ -397,9 +456,16 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         expiring.forEach(n => {
+            const acc = DataManager.getAccounts().find(a => a.id === n.id);
+            const cust = acc ? DataManager.getCustomerById(acc.customerId) : null;
+            const hasPhone = !!(cust && cust.phone) || !!(acc && acc.customerPhone);
             html += `<span class="notif-item notif-warning">
                 <i class="fa-solid fa-triangle-exclamation"></i>
                 <strong>${escapeHtml(n.custName)}</strong> — ${escapeHtml(n.platName)}: يتبقى ${n.daysLeft} يوم
+                <span class="notif-actions">
+                    <button class="notif-action-btn notif-renew-btn" data-id="${escapeAttr(n.id)}" type="button">تجديد</button>
+                    ${hasPhone ? `<button class="notif-action-btn notif-whatsapp-btn" data-id="${escapeAttr(n.id)}" type="button"><i class="fa-brands fa-whatsapp"></i></button>` : ''}
+                </span>
             </span>`;
         });
 
@@ -411,6 +477,20 @@ document.addEventListener('DOMContentLoaded', () => {
                 <button class="notif-action-btn notif-renew-btn" data-id="${escapeAttr(n.id)}" type="button">تجديد</button>
                 <button class="notif-action-btn notif-close-btn" data-id="${escapeAttr(n.id)}" type="button">إغلاق</button>
                 ${hasPhone ? `<button class="notif-action-btn notif-whatsapp-btn" data-id="${escapeAttr(n.id)}" type="button"><i class="fa-brands fa-whatsapp"></i></button>` : ''}
+                <span class="notif-actions">
+                    <button class="notif-action-btn notif-renew-btn" data-id="${escapeAttr(n.id)}" type="button">تجديد</button>
+                    <button class="notif-action-btn notif-close-btn" data-id="${escapeAttr(n.id)}" type="button">إغلاق</button>
+                    ${hasPhone ? `<button class="notif-action-btn notif-whatsapp-btn" data-id="${escapeAttr(n.id)}" type="button"><i class="fa-brands fa-whatsapp"></i></button>` : ''}
+                </span>
+                <span class="notif-actions">
+                    <button class="notif-action-btn notif-renew-btn" data-id="${escapeAttr(n.id)}" type="button">تجديد</button>
+                    ${hasPhone ? `<button class="notif-action-btn notif-whatsapp-btn" data-id="${escapeAttr(n.id)}" type="button"><i class="fa-brands fa-whatsapp"></i></button>` : ''}
+                </span>
+                <span class="notif-actions">
+                    <button class="notif-action-btn notif-renew-btn" data-id="${escapeAttr(n.id)}" type="button">تجديد</button>
+                    <button class="notif-action-btn notif-close-btn" data-id="${escapeAttr(n.id)}" type="button">إغلاق</button>
+                    ${hasPhone ? `<button class="notif-action-btn notif-whatsapp-btn" data-id="${escapeAttr(n.id)}" type="button"><i class="fa-brands fa-whatsapp"></i></button>` : ''}
+                </span>
             </span>`;
         });
 
@@ -1202,6 +1282,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 ${statusInfo.status === 'expired' ? `<button class="btn-icon text-danger close-acc-btn" data-id="${acc.id}" title="إغلاق الاشتراك"><i class="fa-solid fa-circle-stop"></i></button>` : ''}
             `;
 
+            const dateDurationHtml = statusInfo.status === 'closed'
+                ? `<div>${acc.startDate || '-'}</div><div class="text-muted" style="font-size:0.82rem;font-weight:700;">مغلق${acc.closedAt ? ' - ' + new Date(acc.closedAt).toLocaleDateString('ar-EG') : ''}</div>`
+                : `<div>${acc.startDate || '-'}</div>
+                    <div class="text-primary" style="font-size:0.82rem;font-weight:700;">
+                        ${acc.durationDays} يوم إجمالي
+                        <div class="${statusInfo.daysLeft <= 7 ? 'text-danger' : 'text-warning'}" style="font-size:0.9rem; margin-top:2px;">
+                            (متبقي ${statusInfo.daysLeft} يوم)
+                        </div>
+                    </div>`;
+
             const paidBtn = `<button class="btn-icon toggle-paid-btn" data-id="${acc.id}" data-paid="${isPaid}" title="${isPaid ? 'تم السداد - اضغط للتغيير' : 'لم يسدد - اضغط للتغيير'}">
                 <i class="fa-solid ${isPaid ? 'fa-circle-check text-success' : 'fa-circle-xmark text-danger'}"></i>
             </button>`;
@@ -1229,15 +1319,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         <i class="fa-solid fa-key text-warning"></i>
                     </button>
                 </td>
-                <td data-label="التاريخ/المدة">
-                    <div>${acc.startDate || '-'}</div>
-                    <div class="text-primary" style="font-size:0.82rem;font-weight:700;">
-                        ${acc.durationDays} يوم إجمالي
-                        <div class="${statusInfo.daysLeft <= 7 ? 'text-danger' : 'text-warning'}" style="font-size:0.9rem; margin-top:2px;">
-                            (متبقي ${statusInfo.daysLeft} يوم)
-                        </div>
-                    </div>
-                </td>
+                <td data-label="التاريخ/المدة">${dateDurationHtml}</td>
                 <td data-label="الماليات" class="col-financials">
                     <div>اشتراك: <span class="text-success">${Number(acc.revenue).toLocaleString('ar-EG')}</span> ج.م</div>
                     ${refund > 0 ? '<div>تعويض: <span class="text-danger">' + Number(acc.refund).toLocaleString('ar-EG') + '</span> ج.م</div>' : ''}
