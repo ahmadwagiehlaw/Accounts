@@ -285,6 +285,52 @@ class DataManager {
         await window.firebaseApp.updateDoc(ref, { isPaid });
     }
 
+    static async closeAccount(id, reason = 'expired') {
+        const acc = this.accounts.find(a => a.id === id);
+        const closedAt = new Date().toISOString();
+        const closedBy = window.firebaseApp && window.firebaseApp.auth && window.firebaseApp.auth.currentUser
+            ? window.firebaseApp.auth.currentUser.email || ''
+            : '';
+        const patch = {
+            lifecycleStatus: 'closed',
+            closedAt,
+            closedReason: reason,
+            closedBy
+        };
+
+        if (acc) Object.assign(acc, patch);
+        localStorage.setItem(ACCOUNTS_KEY, JSON.stringify(this.accounts));
+        if (!this.isFirebaseReady) return;
+        const ref = window.firebaseApp.doc(window.firebaseApp.db, "accounts", id);
+        await window.firebaseApp.updateDoc(ref, patch);
+    }
+
+    static async renewAccount(id, options = {}) {
+        const acc = this.accounts.find(a => a.id === id);
+        if (!acc) return;
+
+        const startDate = options.startDate || new Date().toISOString().split('T')[0];
+        const durationDays = options.durationDays || acc.durationDays || 30;
+        const patch = {
+            previousStartDate: acc.startDate || null,
+            previousDurationDays: acc.durationDays || null,
+            startDate,
+            durationDays,
+            lifecycleStatus: 'active',
+            closedAt: null,
+            closedReason: null,
+            closedBy: null,
+            lastRenewedAt: new Date().toISOString(),
+            renewalCount: parseInt(acc.renewalCount || 0) + 1
+        };
+
+        Object.assign(acc, patch);
+        localStorage.setItem(ACCOUNTS_KEY, JSON.stringify(this.accounts));
+        if (!this.isFirebaseReady) return;
+        const ref = window.firebaseApp.doc(window.firebaseApp.db, "accounts", id);
+        await window.firebaseApp.updateDoc(ref, patch);
+    }
+
     // ==================== NOTIFICATIONS ====================
     static getNotifications() {
         const expiring = [];
@@ -311,17 +357,13 @@ class DataManager {
             activeAccounts: 0, expiredAccounts: 0,
             totalAccounts: this.accounts.length, totalCustomers: this.customers.length
         };
-        const now = new Date();
-
         // Revenue & refunds from subscriptions
         this.accounts.forEach(acc => {
             stats.totalRevenue += parseFloat(acc.revenue || 0);
             stats.totalRefunds += parseFloat(acc.refund || 0);
-            const startDate = new Date(acc.startDate);
-            const endDate = new Date(startDate);
-            endDate.setDate(endDate.getDate() + parseInt(acc.durationDays || 30));
-            if (endDate >= now) stats.activeAccounts++;
-            else stats.expiredAccounts++;
+            const status = this.getAccountStatus(acc);
+            if (status.status === 'active' || status.status === 'warning') stats.activeAccounts++;
+            else if (status.status === 'expired') stats.expiredAccounts++;
         });
 
         // Cost from plans (registrationCost)
@@ -334,6 +376,9 @@ class DataManager {
     }
 
     static getAccountStatus(account) {
+        if (account && account.lifecycleStatus === 'closed') {
+            return { status: 'closed', label: 'مغلق', daysLeft: 0 };
+        }
         const startDate = new Date(account.startDate);
         const endDate = new Date(startDate);
         endDate.setDate(endDate.getDate() + parseInt(account.durationDays || 30));

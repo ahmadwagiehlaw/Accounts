@@ -16,6 +16,30 @@ document.addEventListener('DOMContentLoaded', () => {
     const filterStatus = document.getElementById('filterStatus');
     const searchCustomers = document.getElementById('searchCustomers');
 
+    function bindNotificationActions() {
+        document.querySelectorAll('.notif-renew-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                renewAccountFromUi(btn.dataset.id);
+            });
+        });
+        document.querySelectorAll('.notif-close-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                closeAccountFromUi(btn.dataset.id);
+            });
+        });
+        document.querySelectorAll('.notif-whatsapp-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                openWhatsAppAccount(btn.dataset.id);
+            });
+        });
+    }
+
     // ============================================================
     //  FIREBASE AUTHENTICATION & SYNC
     // ============================================================
@@ -379,7 +403,29 @@ document.addEventListener('DOMContentLoaded', () => {
             </span>`;
         });
 
+        expired.forEach(n => {
+            const acc = DataManager.getAccounts().find(a => a.id === n.id);
+            const cust = acc ? DataManager.getCustomerById(acc.customerId) : null;
+            const hasPhone = !!(cust && cust.phone) || !!(acc && acc.customerPhone);
+            html += `<span class="notif-actions notif-action-group">
+                <button class="notif-action-btn notif-renew-btn" data-id="${escapeAttr(n.id)}" type="button">تجديد</button>
+                <button class="notif-action-btn notif-close-btn" data-id="${escapeAttr(n.id)}" type="button">إغلاق</button>
+                ${hasPhone ? `<button class="notif-action-btn notif-whatsapp-btn" data-id="${escapeAttr(n.id)}" type="button"><i class="fa-brands fa-whatsapp"></i></button>` : ''}
+            </span>`;
+        });
+
+        expiring.forEach(n => {
+            const acc = DataManager.getAccounts().find(a => a.id === n.id);
+            const cust = acc ? DataManager.getCustomerById(acc.customerId) : null;
+            const hasPhone = !!(cust && cust.phone) || !!(acc && acc.customerPhone);
+            html += `<span class="notif-actions notif-action-group">
+                <button class="notif-action-btn notif-renew-btn" data-id="${escapeAttr(n.id)}" type="button">تجديد</button>
+                ${hasPhone ? `<button class="notif-action-btn notif-whatsapp-btn" data-id="${escapeAttr(n.id)}" type="button"><i class="fa-brands fa-whatsapp"></i></button>` : ''}
+            </span>`;
+        });
+
         list.innerHTML = html;
+        bindNotificationActions();
 
         // Trigger Local OS Notification once per day if enabled
         if ('Notification' in window) {
@@ -437,7 +483,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const s = DataManager.getAccountStatus(acc);
             if (s.status === 'active') activeCount++;
             else if (s.status === 'warning') warningCount++;
-            else expiredCount++;
+            else if (s.status === 'expired') expiredCount++;
         });
         document.getElementById('stat-customers-count').textContent = DataManager.getCustomers().length;
         document.getElementById('stat-active-count').textContent = activeCount;
@@ -1151,6 +1197,10 @@ document.addEventListener('DOMContentLoaded', () => {
             const revenue = parseFloat(acc.revenue || 0);
             const refund = parseFloat(acc.refund || 0);
             const netRevenue = revenue - refund;
+            const lifecycleButtons = `
+                <button class="btn-icon text-primary renew-acc-btn" data-id="${acc.id}" title="تجديد"><i class="fa-solid fa-rotate-right"></i></button>
+                ${statusInfo.status === 'expired' ? `<button class="btn-icon text-danger close-acc-btn" data-id="${acc.id}" title="إغلاق الاشتراك"><i class="fa-solid fa-circle-stop"></i></button>` : ''}
+            `;
 
             const paidBtn = `<button class="btn-icon toggle-paid-btn" data-id="${acc.id}" data-paid="${isPaid}" title="${isPaid ? 'تم السداد - اضغط للتغيير' : 'لم يسدد - اضغط للتغيير'}">
                 <i class="fa-solid ${isPaid ? 'fa-circle-check text-success' : 'fa-circle-xmark text-danger'}"></i>
@@ -1202,6 +1252,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     <div class="actions-cell">
                         <button class="btn-icon edit-acc-btn" data-id="${acc.id}" title="تعديل"><i class="fa-solid fa-pen text-info"></i></button>
                         <button class="btn-icon delete-acc-btn" data-id="${acc.id}" title="حذف"><i class="fa-solid fa-trash text-danger"></i></button>
+                        ${lifecycleButtons}
                         <button class="btn-icon text-success whatsapp-acc-btn" data-id="${acc.id}" title="مراسلة عبر واتساب"><i class="fa-brands fa-whatsapp"></i></button>
                         <button class="btn-icon text-warning invoice-acc-btn" data-id="${acc.id}" title="توليد فاتورة"><i class="fa-solid fa-file-invoice-dollar"></i></button>
                     </div>
@@ -1217,6 +1268,12 @@ document.addEventListener('DOMContentLoaded', () => {
         });
         tableBody.querySelectorAll('.toggle-paid-btn').forEach(btn => {
             btn.addEventListener('click', () => toggleAccountPaid(btn.dataset.id, btn.dataset.paid === 'true'));
+        });
+        tableBody.querySelectorAll('.renew-acc-btn').forEach(btn => {
+            btn.addEventListener('click', () => renewAccountFromUi(btn.dataset.id));
+        });
+        tableBody.querySelectorAll('.close-acc-btn').forEach(btn => {
+            btn.addEventListener('click', () => closeAccountFromUi(btn.dataset.id));
         });
         tableBody.querySelectorAll('.show-creds-btn').forEach(btn => {
             btn.addEventListener('click', () => showCredentials(btn.dataset.id));
@@ -1295,6 +1352,81 @@ document.addEventListener('DOMContentLoaded', () => {
         DataManager.updateAccountPaid(id, !currentPaid);
         renderAccounts();
         checkNotifications();
+    }
+
+    async function closeAccountFromUi(id) {
+        const acc = DataManager.getAccounts().find(a => a.id === id);
+        if (!acc) return;
+
+        const result = await Swal.fire({
+            title: 'إغلاق الاشتراك؟',
+            text: 'سيبقى الاشتراك محفوظًا في البيانات، وسيختفي فقط من تنبيهات المتابعة.',
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonText: 'نعم، أغلقه',
+            cancelButtonText: 'إلغاء',
+            background: '#111827',
+            color: '#fff'
+        });
+
+        if (!result.isConfirmed) return;
+
+        try {
+            await DataManager.closeAccount(id, 'expired');
+            renderAccounts();
+            checkNotifications();
+            if (document.getElementById('view-dashboard').classList.contains('active')) renderDashboard();
+            showToast('تم إغلاق الاشتراك بنجاح');
+        } catch (error) {
+            console.error('Failed to close account:', error);
+            Swal.fire({ icon: 'error', title: 'تعذر الإغلاق', text: 'حدث خطأ أثناء تحديث الاشتراك.', background: '#111827', color: '#fff' });
+        }
+    }
+
+    async function renewAccountFromUi(id) {
+        const acc = DataManager.getAccounts().find(a => a.id === id);
+        if (!acc) return;
+
+        const today = new Date().toISOString().split('T')[0];
+        const currentDuration = parseInt(acc.durationDays || 30);
+        const result = await Swal.fire({
+            title: 'تجديد الاشتراك',
+            html: `
+                <div class="swal-form-grid">
+                    <label style="display:block;text-align:right;margin-bottom:0.35rem;">تاريخ البداية الجديد</label>
+                    <input type="date" id="renewStartDate" class="swal2-input" value="${today}" style="width:100%;margin:0 0 0.75rem;">
+                    <label style="display:block;text-align:right;margin-bottom:0.35rem;">المدة بالأيام</label>
+                    <input type="number" id="renewDurationDays" class="swal2-input" value="${currentDuration}" min="1" style="width:100%;margin:0;">
+                </div>
+            `,
+            showCancelButton: true,
+            confirmButtonText: 'تجديد',
+            cancelButtonText: 'إلغاء',
+            background: '#111827',
+            color: '#fff',
+            preConfirm: () => {
+                const startDate = document.getElementById('renewStartDate').value;
+                const durationDays = parseInt(document.getElementById('renewDurationDays').value);
+                if (!startDate || !durationDays || durationDays < 1) {
+                    Swal.showValidationMessage('يرجى إدخال تاريخ ومدة صحيحة');
+                    return false;
+                }
+                return { startDate, durationDays };
+            }
+        });
+
+        if (!result.isConfirmed) return;
+
+        try {
+            await DataManager.renewAccount(id, result.value);
+            renderAccounts();
+            checkNotifications();
+            if (document.getElementById('view-dashboard').classList.contains('active')) renderDashboard();
+            showToast('تم تجديد الاشتراك بنجاح');
+        } catch (error) {
+            console.error('Failed to renew account:', error);
+            Swal.fire({ icon: 'error', title: 'تعذر التجديد', text: 'حدث خطأ أثناء تحديث الاشتراك.', background: '#111827', color: '#fff' });
+        }
     }
 
     function showCredentials(accId) {
