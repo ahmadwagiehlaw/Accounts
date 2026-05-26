@@ -663,7 +663,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         <strong>${escapeHtml(custName)}</strong> — ${p ? escapeHtml(p.name) : 'غير محدد'}
                         <small style="display:block;margin-top:2px;">
                             ${acc.startDate} • 
-                            <span class="${statusInfo.daysLeft <= 7 ? 'text-danger' : 'text-warning'}" style="font-weight:bold;">متبقي ${statusInfo.daysLeft} يوم</span> • 
+                            <span class="${statusInfo.daysLeft !== null && statusInfo.daysLeft <= 7 ? 'text-danger' : 'text-warning'}" style="font-weight:bold;">${statusInfo.daysLeft === null ? statusInfo.label : 'متبقي ' + statusInfo.daysLeft + ' يوم'}</span> • 
                             <span class="status-badge status-${statusInfo.status}">${statusInfo.label}</span>
                         </small>
                     </div>
@@ -699,7 +699,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const activeList = document.getElementById('followup-active-list');
         if (!center || !activeList) return;
 
-        const activeAccounts = accounts.filter(acc => DataManager.getAccountStatus(acc).status !== 'closed');
+        const activeAccounts = accounts.filter(acc => !['closed', 'paused', 'cancelled'].includes(DataManager.getAccountStatus(acc).status));
         const warningAccounts = activeAccounts.filter(acc => DataManager.getAccountStatus(acc).status === 'warning');
         const expiredAccounts = activeAccounts.filter(acc => DataManager.getAccountStatus(acc).status === 'expired');
         const unpaidAccounts = activeAccounts.filter(acc => acc.isPaid !== true);
@@ -1578,14 +1578,24 @@ document.addEventListener('DOMContentLoaded', () => {
             const netRevenue = revenue - refund;
             const accCycle = acc.billingCycle || 'custom';
             const isMonthly = accCycle === 'monthly';
+            const isFollowedLifecycle = ['active', 'warning', 'expired'].includes(statusInfo.status);
             const lifecycleButtons = `
-                ${isMonthly ? `<button class="btn-icon text-success renew-monthly-acc-btn" data-id="${acc.id}" title="تجديد شهري"><i class="fa-solid fa-calendar-plus"></i></button>` : ''}
-                ${!isMonthly ? `<button class="btn-icon text-primary renew-acc-btn" data-id="${acc.id}" title="تجديد"><i class="fa-solid fa-rotate-right"></i></button>` : ''}
+                ${isFollowedLifecycle && isMonthly ? `<button class="btn-icon text-success renew-monthly-acc-btn" data-id="${acc.id}" title="تجديد شهري"><i class="fa-solid fa-calendar-plus"></i></button>` : ''}
+                ${isFollowedLifecycle && !isMonthly ? `<button class="btn-icon text-primary renew-acc-btn" data-id="${acc.id}" title="تجديد"><i class="fa-solid fa-rotate-right"></i></button>` : ''}
+                ${isFollowedLifecycle ? `<button class="btn-icon text-warning pause-acc-btn" data-id="${acc.id}" title="إيقاف مؤقت"><i class="fa-solid fa-pause"></i></button>` : ''}
+                ${isFollowedLifecycle || statusInfo.status === 'paused' ? `<button class="btn-icon text-danger cancel-acc-btn" data-id="${acc.id}" title="إلغاء الاشتراك"><i class="fa-solid fa-ban"></i></button>` : ''}
+                ${statusInfo.status === 'paused' || statusInfo.status === 'cancelled' ? `<button class="btn-icon text-success reactivate-acc-btn" data-id="${acc.id}" title="إعادة تفعيل"><i class="fa-solid fa-play"></i></button>` : ''}
                 ${statusInfo.status === 'expired' ? `<button class="btn-icon text-danger close-acc-btn" data-id="${acc.id}" title="إغلاق الاشتراك"><i class="fa-solid fa-circle-stop"></i></button>` : ''}
             `;
 
-            const dateDurationHtml = statusInfo.status === 'closed'
-                ? `<div>${acc.startDate || '-'}</div><div class="text-muted" style="font-size:0.82rem;font-weight:700;">مغلق${acc.closedAt ? ' - ' + new Date(acc.closedAt).toLocaleDateString('ar-EG') : ''}</div>`
+            const lifecycleDateMap = {
+                closed: acc.closedAt,
+                paused: acc.pausedAt,
+                cancelled: acc.cancelledAt
+            };
+            const isNonTemporalStatus = ['closed', 'paused', 'cancelled'].includes(statusInfo.status);
+            const dateDurationHtml = isNonTemporalStatus
+                ? `<div>${acc.startDate || '-'}</div><div class="text-muted" style="font-size:0.82rem;font-weight:700;">${statusInfo.label}${lifecycleDateMap[statusInfo.status] ? ' - ' + new Date(lifecycleDateMap[statusInfo.status]).toLocaleDateString('ar-EG') : ''}</div>`
                 : `<div>${acc.startDate || '-'}</div>
                     <div class="text-primary" style="font-size:0.82rem;font-weight:700;">
                         ${acc.durationDays} يوم إجمالي
@@ -1662,6 +1672,15 @@ document.addEventListener('DOMContentLoaded', () => {
         });
         tableBody.querySelectorAll('.close-acc-btn').forEach(btn => {
             btn.addEventListener('click', () => closeAccountFromUi(btn.dataset.id));
+        });
+        tableBody.querySelectorAll('.pause-acc-btn').forEach(btn => {
+            btn.addEventListener('click', () => pauseAccountFromUi(btn.dataset.id));
+        });
+        tableBody.querySelectorAll('.cancel-acc-btn').forEach(btn => {
+            btn.addEventListener('click', () => cancelAccountFromUi(btn.dataset.id));
+        });
+        tableBody.querySelectorAll('.reactivate-acc-btn').forEach(btn => {
+            btn.addEventListener('click', () => reactivateAccountFromUi(btn.dataset.id));
         });
         tableBody.querySelectorAll('.show-creds-btn').forEach(btn => {
             btn.addEventListener('click', () => showCredentials(btn.dataset.id));
@@ -1769,6 +1788,134 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (error) {
             console.error('Failed to close account:', error);
             Swal.fire({ icon: 'error', title: 'تعذر الإغلاق', text: 'حدث خطأ أثناء تحديث الاشتراك.', background: '#111827', color: '#fff' });
+        }
+    }
+
+    function refreshAccountViews() {
+        renderAccounts();
+        checkNotifications();
+        if (document.getElementById('view-dashboard').classList.contains('active')) renderDashboard();
+    }
+
+    async function pauseAccountFromUi(id) {
+        const acc = DataManager.getAccounts().find(a => a.id === id);
+        if (!acc) return;
+
+        const result = await Swal.fire({
+            title: 'إيقاف الاشتراك مؤقتًا؟',
+            input: 'textarea',
+            inputPlaceholder: 'سبب الإيقاف (اختياري)',
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonText: 'إيقاف مؤقت',
+            cancelButtonText: 'إلغاء',
+            background: '#111827',
+            color: '#fff'
+        });
+
+        if (!result.isConfirmed) return;
+
+        try {
+            await DataManager.pauseAccount(id, result.value || '');
+            refreshAccountViews();
+            showToast('تم إيقاف الاشتراك مؤقتًا');
+        } catch (error) {
+            console.error('Failed to pause account:', error);
+            Swal.fire({ icon: 'error', title: 'تعذر الإيقاف', text: 'حدث خطأ أثناء تحديث الاشتراك.', background: '#111827', color: '#fff' });
+        }
+    }
+
+    async function cancelAccountFromUi(id) {
+        const acc = DataManager.getAccounts().find(a => a.id === id);
+        if (!acc) return;
+
+        const result = await Swal.fire({
+            title: 'إلغاء الاشتراك؟',
+            text: 'سيبقى الاشتراك محفوظًا في الجدول ولن يظهر في التنبيهات أو مركز المتابعة.',
+            input: 'textarea',
+            inputPlaceholder: 'سبب الإلغاء (اختياري)',
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonText: 'إلغاء الاشتراك',
+            cancelButtonText: 'رجوع',
+            confirmButtonColor: '#ef4444',
+            background: '#111827',
+            color: '#fff'
+        });
+
+        if (!result.isConfirmed) return;
+
+        try {
+            await DataManager.cancelAccount(id, result.value || '');
+            refreshAccountViews();
+            showToast('تم إلغاء الاشتراك');
+        } catch (error) {
+            console.error('Failed to cancel account:', error);
+            Swal.fire({ icon: 'error', title: 'تعذر الإلغاء', text: 'حدث خطأ أثناء تحديث الاشتراك.', background: '#111827', color: '#fff' });
+        }
+    }
+
+    async function reactivateAccountFromUi(id) {
+        const acc = DataManager.getAccounts().find(a => a.id === id);
+        if (!acc) return;
+
+        const today = new Date().toISOString().split('T')[0];
+        const cycleMonths = DataManager.getBillingCycleMonths(acc.billingCycle);
+        const defaultEnd = cycleMonths
+            ? DataManager.addCalendarMonths(today, cycleMonths)
+            : addDaysToDate(today, acc.durationDays || 30);
+
+        const result = await Swal.fire({
+            title: 'إعادة تفعيل الاشتراك',
+            html: `
+                <div class="swal-form-grid">
+                    <label style="display:block;text-align:right;margin-bottom:0.35rem;">تاريخ البداية</label>
+                    <input type="date" id="reactivateStartDate" class="swal2-input" value="${today}" style="width:100%;margin:0 0 0.75rem;">
+                    <label style="display:block;text-align:right;margin-bottom:0.35rem;">تاريخ النهاية</label>
+                    <input type="date" id="reactivateEndDate" class="swal2-input" value="${defaultEnd}" style="width:100%;margin:0 0 0.75rem;">
+                    <label style="display:block;text-align:right;margin-bottom:0.35rem;">سبب إعادة التفعيل (اختياري)</label>
+                    <textarea id="reactivateReason" class="swal2-textarea" style="width:100%;margin:0;min-height:5rem;"></textarea>
+                </div>
+            `,
+            showCancelButton: true,
+            confirmButtonText: 'إعادة تفعيل',
+            cancelButtonText: 'إلغاء',
+            background: '#111827',
+            color: '#fff',
+            didOpen: () => {
+                const startInput = document.getElementById('reactivateStartDate');
+                const endInput = document.getElementById('reactivateEndDate');
+                startInput.addEventListener('change', () => {
+                    endInput.value = cycleMonths
+                        ? DataManager.addCalendarMonths(startInput.value, cycleMonths)
+                        : addDaysToDate(startInput.value, acc.durationDays || 30);
+                });
+            },
+            preConfirm: () => {
+                const startDate = document.getElementById('reactivateStartDate').value;
+                const endDate = document.getElementById('reactivateEndDate').value;
+                const reason = document.getElementById('reactivateReason').value.trim();
+                if (!startDate || !endDate) {
+                    Swal.showValidationMessage('يرجى إدخال تاريخ البداية والنهاية');
+                    return false;
+                }
+                if (new Date(endDate) < new Date(startDate)) {
+                    Swal.showValidationMessage('تاريخ النهاية يجب أن يكون بعد تاريخ البداية أو مساويًا له');
+                    return false;
+                }
+                return { startDate, endDate, reason };
+            }
+        });
+
+        if (!result.isConfirmed) return;
+
+        try {
+            await DataManager.reactivateAccount(id, result.value);
+            refreshAccountViews();
+            showToast('تمت إعادة تفعيل الاشتراك');
+        } catch (error) {
+            console.error('Failed to reactivate account:', error);
+            Swal.fire({ icon: 'error', title: 'تعذر إعادة التفعيل', text: 'حدث خطأ أثناء تحديث الاشتراك.', background: '#111827', color: '#fff' });
         }
     }
 

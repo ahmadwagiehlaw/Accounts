@@ -371,6 +371,90 @@ class DataManager {
         }
     }
 
+    static getCurrentUserEmail() {
+        return window.firebaseApp && window.firebaseApp.auth && window.firebaseApp.auth.currentUser
+            ? window.firebaseApp.auth.currentUser.email || ''
+            : '';
+    }
+
+    static async updateAccountLifecycle(id, patch) {
+        const acc = this.accounts.find(a => a.id === id);
+        if (!acc) return;
+        const previous = { ...acc };
+
+        Object.assign(acc, patch);
+        localStorage.setItem(ACCOUNTS_KEY, JSON.stringify(this.accounts));
+        if (!this.isFirebaseReady) return;
+
+        try {
+            const ref = window.firebaseApp.doc(window.firebaseApp.db, "accounts", id);
+            await window.firebaseApp.updateDoc(ref, patch);
+        } catch (error) {
+            Object.assign(acc, previous);
+            localStorage.setItem(ACCOUNTS_KEY, JSON.stringify(this.accounts));
+            throw error;
+        }
+    }
+
+    static async pauseAccount(id, reason = '') {
+        const acc = this.accounts.find(a => a.id === id);
+        if (!acc) return;
+        await this.updateAccountLifecycle(id, {
+            previousLifecycleStatus: acc.lifecycleStatus || 'active',
+            lifecycleStatus: 'paused',
+            pausedAt: new Date().toISOString(),
+            pausedReason: reason,
+            pausedBy: this.getCurrentUserEmail()
+        });
+    }
+
+    static async cancelAccount(id, reason = '') {
+        const acc = this.accounts.find(a => a.id === id);
+        if (!acc) return;
+        await this.updateAccountLifecycle(id, {
+            previousLifecycleStatus: acc.lifecycleStatus || 'active',
+            lifecycleStatus: 'cancelled',
+            cancelledAt: new Date().toISOString(),
+            cancelledReason: reason,
+            cancelledBy: this.getCurrentUserEmail()
+        });
+    }
+
+    static async reactivateAccount(id, options = {}) {
+        const acc = this.accounts.find(a => a.id === id);
+        if (!acc) return;
+
+        const startDate = options.startDate || new Date().toISOString().split('T')[0];
+        const endDate = options.endDate || acc.currentPeriodEnd || acc.startDate;
+        const durationDays = this.daysBetween(startDate, endDate);
+        const isRecurringCycle = !!this.getBillingCycleMonths(acc.billingCycle);
+
+        await this.updateAccountLifecycle(id, {
+            previousLifecycleStatus: acc.lifecycleStatus || null,
+            previousCurrentPeriodStart: acc.currentPeriodStart || acc.startDate || null,
+            previousCurrentPeriodEnd: acc.currentPeriodEnd || null,
+            previousNextBillingDate: acc.nextBillingDate || null,
+            lifecycleStatus: 'active',
+            startDate,
+            durationDays,
+            currentPeriodStart: startDate,
+            currentPeriodEnd: endDate,
+            nextBillingDate: isRecurringCycle ? endDate : '',
+            closedAt: null,
+            closedReason: null,
+            closedBy: null,
+            pausedAt: null,
+            pausedReason: null,
+            pausedBy: null,
+            cancelledAt: null,
+            cancelledReason: null,
+            cancelledBy: null,
+            reactivatedAt: new Date().toISOString(),
+            reactivatedBy: this.getCurrentUserEmail(),
+            reactivationReason: options.reason || ''
+        });
+    }
+
     static async renewAccount(id, options = {}) {
         const acc = this.accounts.find(a => a.id === id);
         if (!acc) return;
@@ -394,6 +478,12 @@ class DataManager {
             closedAt: null,
             closedReason: null,
             closedBy: null,
+            pausedAt: null,
+            pausedReason: null,
+            pausedBy: null,
+            cancelledAt: null,
+            cancelledReason: null,
+            cancelledBy: null,
             lastRenewedAt: new Date().toISOString(),
             renewalCount: parseInt(acc.renewalCount || 0) + 1
         };
@@ -453,6 +543,12 @@ class DataManager {
             closedAt: null,
             closedReason: null,
             closedBy: null,
+            pausedAt: null,
+            pausedReason: null,
+            pausedBy: null,
+            cancelledAt: null,
+            cancelledReason: null,
+            cancelledBy: null,
             lastRenewedAt: new Date().toISOString(),
             renewalCount: parseInt(acc.renewalCount || 0) + 1,
             isPaid: options.isPaid === true
@@ -501,6 +597,7 @@ class DataManager {
         const expired = [];
         this.accounts.forEach(acc => {
             const status = this.getAccountStatus(acc);
+            if (['closed', 'paused', 'cancelled'].includes(status.status)) return;
             const customer = this.getCustomerById(acc.customerId);
             const platform = this.getPlatformById(acc.platformId);
             const custName = customer ? customer.name : 'عميل';
@@ -541,7 +638,13 @@ class DataManager {
 
     static getAccountStatus(account) {
         if (account && account.lifecycleStatus === 'closed') {
-            return { status: 'closed', label: 'مغلق', daysLeft: 0 };
+            return { status: 'closed', label: 'مغلق', daysLeft: null };
+        }
+        if (account && account.lifecycleStatus === 'paused') {
+            return { status: 'paused', label: 'موقوف', daysLeft: null };
+        }
+        if (account && account.lifecycleStatus === 'cancelled') {
+            return { status: 'cancelled', label: 'ملغي', daysLeft: null };
         }
         const period = this.getAccountPeriod(account);
         const endDate = new Date(period.endDate);
