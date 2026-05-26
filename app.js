@@ -750,7 +750,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const paymentClass = isPaid ? 'text-success' : 'text-danger';
             const canClose = statusInfo.status === 'expired';
             const canMarkPaid = !isPaid;
-            const canInvoice = acc.revenue !== undefined && acc.revenue !== '' && !Number.isNaN(Number(acc.revenue));
+            const canInvoice = acc.revenue !== undefined && acc.revenue !== null && acc.revenue !== '' && !Number.isNaN(Number(acc.revenue));
             const overlapBadge = groupType === 'unpaid' && (statusInfo.status === 'expired' || statusInfo.status === 'warning')
                 ? `<span class="followup-overlap-badge status-${statusInfo.status}">${statusInfo.status === 'expired' ? 'منتهي' : 'قارب على الانتهاء'}</span>`
                 : '';

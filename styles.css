@@ -748,6 +748,7 @@ h6 {
     gap: 0.5rem;
     margin-bottom: 1rem;
     overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
     padding-bottom: 0.15rem;
 }
 
