@@ -5,6 +5,7 @@ const PLATFORMS_KEY = STORAGE_PREFIX + 'platforms';
 const ACCOUNTS_KEY = STORAGE_PREFIX + 'accounts';
 const CUSTOMERS_KEY = STORAGE_PREFIX + 'customers';
 const PLANS_KEY = STORAGE_PREFIX + 'service_plans';
+const RENEWALS_KEY = STORAGE_PREFIX + 'renewals';
 const JOB_TITLES_KEY = STORAGE_PREFIX + 'job_titles';
 const WORKPLACES_KEY = STORAGE_PREFIX + 'workplaces';
 
@@ -36,6 +37,7 @@ class DataManager {
     static accounts = [];
     static customers = [];
     static servicePlans = [];
+    static renewals = [];
     static jobTitles = [];
     static workplaces = [];
     static isFirebaseReady = false;
@@ -48,6 +50,7 @@ class DataManager {
         this.accounts = JSON.parse(localStorage.getItem(ACCOUNTS_KEY) || '[]');
         this.customers = JSON.parse(localStorage.getItem(CUSTOMERS_KEY) || '[]');
         this.servicePlans = JSON.parse(localStorage.getItem(PLANS_KEY) || '[]');
+        this.renewals = JSON.parse(localStorage.getItem(RENEWALS_KEY) || '[]');
         this.initLookups();
     }
 
@@ -102,6 +105,13 @@ class DataManager {
         onSnapshot(collection(db, "accounts"), (snapshot) => {
             this.accounts = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
             localStorage.setItem(ACCOUNTS_KEY, JSON.stringify(this.accounts));
+            window.dispatchEvent(new Event('dataChanged'));
+        });
+
+        // Sync Renewals
+        onSnapshot(collection(db, "renewals"), (snapshot) => {
+            this.renewals = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            localStorage.setItem(RENEWALS_KEY, JSON.stringify(this.renewals));
             window.dispatchEvent(new Event('dataChanged'));
         });
     }
@@ -251,6 +261,44 @@ class DataManager {
     // ==================== ACCOUNTS ====================
     static getAccounts() { return this.accounts; }
 
+    static getRenewals() { return this.renewals; }
+    static getRenewalsForAccount(accountId) {
+        return this.renewals.filter(r => r.accountId === accountId);
+    }
+
+    static formatDate(date) {
+        return date.toISOString().split('T')[0];
+    }
+
+    static addCalendarMonths(dateString, months = 1) {
+        const start = new Date(dateString);
+        const day = start.getDate();
+        const targetMonthIndex = start.getMonth() + months;
+        const targetYear = start.getFullYear() + Math.floor(targetMonthIndex / 12);
+        const targetMonth = ((targetMonthIndex % 12) + 12) % 12;
+        const lastDay = new Date(targetYear, targetMonth + 1, 0).getDate();
+        const result = new Date(start);
+        result.setFullYear(targetYear, targetMonth, Math.min(day, lastDay));
+        return this.formatDate(result);
+    }
+
+    static daysBetween(startDate, endDate) {
+        const start = new Date(startDate);
+        const end = new Date(endDate);
+        return Math.max(1, Math.round((end - start) / (1000 * 60 * 60 * 24)));
+    }
+
+    static getAccountPeriod(account) {
+        const startDate = account.currentPeriodStart || account.startDate;
+        let endDate = account.currentPeriodEnd || '';
+        if (!endDate && startDate) {
+            const end = new Date(startDate);
+            end.setDate(end.getDate() + parseInt(account.durationDays || 30));
+            endDate = this.formatDate(end);
+        }
+        return { startDate, endDate };
+    }
+
     static async addAccount(account) {
         if (!this.isFirebaseReady) return account;
         account.createdAt = new Date().toISOString();
@@ -346,6 +394,90 @@ class DataManager {
         }
     }
 
+    static async addRenewalRecord(renewal) {
+        const record = { ...renewal, createdAt: new Date().toISOString() };
+        if (!this.isFirebaseReady) {
+            record.id = Date.now().toString();
+            this.renewals.push(record);
+            localStorage.setItem(RENEWALS_KEY, JSON.stringify(this.renewals));
+            return record;
+        }
+        const docRef = await window.firebaseApp.addDoc(
+            window.firebaseApp.collection(window.firebaseApp.db, "renewals"), record
+        );
+        return { id: docRef.id, ...record };
+    }
+
+    static async renewMonthlyAccount(id, options = {}) {
+        const acc = this.accounts.find(a => a.id === id);
+        if (!acc) return;
+        const previous = { ...acc };
+        const previousRenewals = [...this.renewals];
+        const period = this.getAccountPeriod(acc);
+        const previousStart = period.startDate || acc.startDate;
+        const previousEnd = period.endDate || this.addCalendarMonths(previousStart, 1);
+        const newStart = options.startDate || previousEnd || new Date().toISOString().split('T')[0];
+        const newEnd = options.endDate || this.addCalendarMonths(newStart, 1);
+        const durationDays = this.daysBetween(newStart, newEnd);
+        const renewedBy = window.firebaseApp && window.firebaseApp.auth && window.firebaseApp.auth.currentUser
+            ? window.firebaseApp.auth.currentUser.email || ''
+            : '';
+        const patch = {
+            billingCycle: 'monthly',
+            recurringEnabled: true,
+            previousStartDate: acc.startDate || null,
+            previousDurationDays: acc.durationDays || null,
+            currentPeriodStart: newStart,
+            currentPeriodEnd: newEnd,
+            nextBillingDate: newEnd,
+            startDate: newStart,
+            durationDays,
+            lifecycleStatus: 'active',
+            closedAt: null,
+            closedReason: null,
+            closedBy: null,
+            lastRenewedAt: new Date().toISOString(),
+            renewalCount: parseInt(acc.renewalCount || 0) + 1,
+            isPaid: options.isPaid === true
+        };
+        const renewalRecord = {
+            accountId: acc.id,
+            customerId: acc.customerId || '',
+            platformId: acc.platformId || '',
+            servicePlanId: acc.servicePlanId || '',
+            previousPeriodStart: previousStart || '',
+            previousPeriodEnd: previousEnd || '',
+            newPeriodStart: newStart,
+            newPeriodEnd: newEnd,
+            amount: parseFloat(options.amount !== undefined ? options.amount : acc.revenue || 0),
+            isPaid: options.isPaid === true,
+            renewedAt: patch.lastRenewedAt,
+            renewedBy,
+            note: options.note || ''
+        };
+
+        Object.assign(acc, patch);
+        localStorage.setItem(ACCOUNTS_KEY, JSON.stringify(this.accounts));
+        try {
+            if (this.isFirebaseReady) {
+                const batch = window.firebaseApp.db.batch();
+                const accountRef = window.firebaseApp.doc(window.firebaseApp.db, "accounts", id);
+                const renewalRef = window.firebaseApp.collection(window.firebaseApp.db, "renewals").doc();
+                batch.set(renewalRef, { ...renewalRecord, createdAt: new Date().toISOString() });
+                batch.update(accountRef, patch);
+                await batch.commit();
+            } else {
+                await this.addRenewalRecord(renewalRecord);
+            }
+        } catch (error) {
+            Object.assign(acc, previous);
+            this.renewals = previousRenewals;
+            localStorage.setItem(ACCOUNTS_KEY, JSON.stringify(this.accounts));
+            localStorage.setItem(RENEWALS_KEY, JSON.stringify(this.renewals));
+            throw error;
+        }
+    }
+
     // ==================== NOTIFICATIONS ====================
     static getNotifications() {
         const expiring = [];
@@ -394,9 +526,8 @@ class DataManager {
         if (account && account.lifecycleStatus === 'closed') {
             return { status: 'closed', label: 'مغلق', daysLeft: 0 };
         }
-        const startDate = new Date(account.startDate);
-        const endDate = new Date(startDate);
-        endDate.setDate(endDate.getDate() + parseInt(account.durationDays || 30));
+        const period = this.getAccountPeriod(account);
+        const endDate = new Date(period.endDate);
         const now = new Date();
         const daysLeft = Math.ceil((endDate - now) / (1000 * 60 * 60 * 24));
         if (daysLeft < 0) return { status: 'expired', label: 'منتهي', daysLeft: 0 };
@@ -410,6 +541,7 @@ class DataManager {
             servicePlans: this.servicePlans,
             accounts: this.accounts,
             customers: this.customers,
+            renewals: this.renewals,
             exportDate: new Date().toISOString()
         }, null, 2);
     }

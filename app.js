@@ -22,7 +22,9 @@ document.addEventListener('DOMContentLoaded', () => {
             btn.addEventListener('click', (e) => {
                 e.preventDefault();
                 e.stopPropagation();
-                renewAccountFromUi(btn.dataset.id);
+                const acc = DataManager.getAccounts().find(a => a.id === btn.dataset.id);
+                if (acc && acc.billingCycle === 'monthly') renewMonthlyAccountFromUi(btn.dataset.id);
+                else renewAccountFromUi(btn.dataset.id);
             });
         });
         container.querySelectorAll('.notif-close-btn').forEach(btn => {
@@ -751,6 +753,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const canClose = statusInfo.status === 'expired';
             const canMarkPaid = !isPaid;
             const canInvoice = acc.revenue !== undefined && acc.revenue !== null && acc.revenue !== '' && !Number.isNaN(Number(acc.revenue));
+            const isMonthly = acc.billingCycle === 'monthly';
             const overlapBadge = groupType === 'unpaid' && (statusInfo.status === 'expired' || statusInfo.status === 'warning')
                 ? `<span class="followup-overlap-badge status-${statusInfo.status}">${statusInfo.status === 'expired' ? 'منتهي' : 'قارب على الانتهاء'}</span>`
                 : '';
@@ -769,7 +772,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     </div>
                 </div>
                 <div class="followup-actions">
-                    <button class="btn-icon followup-renew-btn" data-id="${escapeAttr(acc.id)}" title="تجديد"><i class="fa-solid fa-rotate-right text-primary"></i></button>
+                    ${isMonthly ? `<button class="btn-icon followup-renew-monthly-btn" data-id="${escapeAttr(acc.id)}" title="تجديد شهري"><i class="fa-solid fa-calendar-plus text-success"></i></button>` : ''}
+                    ${!isMonthly ? `<button class="btn-icon followup-renew-btn" data-id="${escapeAttr(acc.id)}" title="تجديد"><i class="fa-solid fa-rotate-right text-primary"></i></button>` : ''}
                     ${canClose ? `<button class="btn-icon followup-close-btn" data-id="${escapeAttr(acc.id)}" title="إغلاق"><i class="fa-solid fa-circle-stop text-danger"></i></button>` : ''}
                     ${phone ? `<button class="btn-icon followup-whatsapp-btn" data-id="${escapeAttr(acc.id)}" title="واتساب"><i class="fa-brands fa-whatsapp text-success"></i></button>` : ''}
                     ${canInvoice ? `<button class="btn-icon followup-invoice-btn" data-id="${escapeAttr(acc.id)}" title="فاتورة"><i class="fa-solid fa-file-invoice-dollar text-warning"></i></button>` : ''}
@@ -781,9 +785,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function getFollowUpTimingText(acc, statusInfo) {
         if (statusInfo.status === 'expired') {
-            const startDate = new Date(acc.startDate);
-            const endDate = new Date(startDate);
-            endDate.setDate(endDate.getDate() + parseInt(acc.durationDays || 30));
+            const period = DataManager.getAccountPeriod(acc);
+            const endDate = new Date(period.endDate);
             const expiredDays = Math.floor((new Date() - endDate) / (1000 * 60 * 60 * 24));
             if (expiredDays < 1) return 'منتهي اليوم';
             return `منتهي منذ ${expiredDays} يوم`;
@@ -794,10 +797,36 @@ document.addEventListener('DOMContentLoaded', () => {
         return `متبقي ${statusInfo.daysLeft} يوم`;
     }
 
+    function buildBillingFields(startDate, durationDays, billingCycle) {
+        const cycle = billingCycle || 'custom';
+        if (cycle === 'monthly') {
+            const currentPeriodEnd = DataManager.addCalendarMonths(startDate, 1);
+            return {
+                billingCycle: 'monthly',
+                recurringEnabled: true,
+                currentPeriodStart: startDate,
+                currentPeriodEnd,
+                nextBillingDate: currentPeriodEnd,
+                durationDays: DataManager.daysBetween(startDate, currentPeriodEnd)
+            };
+        }
+        return {
+            billingCycle: cycle,
+            recurringEnabled: false,
+            currentPeriodStart: '',
+            currentPeriodEnd: '',
+            nextBillingDate: '',
+            durationDays
+        };
+    }
+
     function bindFollowUpActions(container) {
         if (!container) return;
         container.querySelectorAll('.followup-renew-btn').forEach(btn => {
             btn.addEventListener('click', () => renewAccountFromUi(btn.dataset.id));
+        });
+        container.querySelectorAll('.followup-renew-monthly-btn').forEach(btn => {
+            btn.addEventListener('click', () => renewMonthlyAccountFromUi(btn.dataset.id));
         });
         container.querySelectorAll('.followup-close-btn').forEach(btn => {
             btn.addEventListener('click', () => closeAccountFromUi(btn.dataset.id));
@@ -1399,8 +1428,10 @@ document.addEventListener('DOMContentLoaded', () => {
             const revenue = parseFloat(acc.revenue || 0);
             const refund = parseFloat(acc.refund || 0);
             const netRevenue = revenue - refund;
+            const isMonthly = acc.billingCycle === 'monthly';
             const lifecycleButtons = `
-                <button class="btn-icon text-primary renew-acc-btn" data-id="${acc.id}" title="تجديد"><i class="fa-solid fa-rotate-right"></i></button>
+                ${isMonthly ? `<button class="btn-icon text-success renew-monthly-acc-btn" data-id="${acc.id}" title="تجديد شهري"><i class="fa-solid fa-calendar-plus"></i></button>` : ''}
+                ${!isMonthly ? `<button class="btn-icon text-primary renew-acc-btn" data-id="${acc.id}" title="تجديد"><i class="fa-solid fa-rotate-right"></i></button>` : ''}
                 ${statusInfo.status === 'expired' ? `<button class="btn-icon text-danger close-acc-btn" data-id="${acc.id}" title="إغلاق الاشتراك"><i class="fa-solid fa-circle-stop"></i></button>` : ''}
             `;
 
@@ -1418,9 +1449,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 <i class="fa-solid ${isPaid ? 'fa-circle-check text-success' : 'fa-circle-xmark text-danger'}"></i>
             </button>`;
 
+            const billingLabel = isMonthly ? '<div class="text-success" style="font-size:0.76rem">شهري</div>' : '';
             const serviceLabel = plan
-                ? `<div>${escapeHtml(pName)}</div><div class="text-muted" style="font-size:0.78rem">${escapeHtml(plan.name || '')}</div>`
-                : `<div>${escapeHtml(pName)}</div>`;
+                ? `<div>${escapeHtml(pName)}</div><div class="text-muted" style="font-size:0.78rem">${escapeHtml(plan.name || '')}</div>${billingLabel}`
+                : `<div>${escapeHtml(pName)}</div>${billingLabel}`;
 
             const tr = document.createElement('tr');
             tr.innerHTML = `
@@ -1475,6 +1507,9 @@ document.addEventListener('DOMContentLoaded', () => {
         });
         tableBody.querySelectorAll('.renew-acc-btn').forEach(btn => {
             btn.addEventListener('click', () => renewAccountFromUi(btn.dataset.id));
+        });
+        tableBody.querySelectorAll('.renew-monthly-acc-btn').forEach(btn => {
+            btn.addEventListener('click', () => renewMonthlyAccountFromUi(btn.dataset.id));
         });
         tableBody.querySelectorAll('.close-acc-btn').forEach(btn => {
             btn.addEventListener('click', () => closeAccountFromUi(btn.dataset.id));
@@ -1591,6 +1626,10 @@ document.addEventListener('DOMContentLoaded', () => {
     async function renewAccountFromUi(id) {
         const acc = DataManager.getAccounts().find(a => a.id === id);
         if (!acc) return;
+        if (acc.billingCycle === 'monthly') {
+            await renewMonthlyAccountFromUi(id);
+            return;
+        }
 
         const today = new Date().toISOString().split('T')[0];
         const currentDuration = parseInt(acc.durationDays || 30);
@@ -1631,6 +1670,57 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (error) {
             console.error('Failed to renew account:', error);
             Swal.fire({ icon: 'error', title: 'تعذر التجديد', text: 'حدث خطأ أثناء تحديث الاشتراك.', background: '#111827', color: '#fff' });
+        }
+    }
+
+    async function renewMonthlyAccountFromUi(id) {
+        const acc = DataManager.getAccounts().find(a => a.id === id);
+        if (!acc) return;
+        window.renewingMonthlyIds = window.renewingMonthlyIds || {};
+        if (window.renewingMonthlyIds[id]) return;
+        const period = DataManager.getAccountPeriod(acc);
+        const newStart = period.endDate || new Date().toISOString().split('T')[0];
+        const newEnd = DataManager.addCalendarMonths(newStart, 1);
+
+        const result = await Swal.fire({
+            title: 'تجديد شهري',
+            html: `
+                <div style="text-align:right;line-height:1.8;">
+                    <div>الفترة الجديدة:</div>
+                    <strong>${newStart}</strong> إلى <strong>${newEnd}</strong>
+                    <label style="display:block;margin-top:0.75rem;">
+                        <input type="checkbox" id="renewMonthlyPaid" style="margin-left:0.4rem;">
+                        تم السداد
+                    </label>
+                </div>
+            `,
+            showCancelButton: true,
+            confirmButtonText: 'تجديد الشهر',
+            cancelButtonText: 'إلغاء',
+            background: '#111827',
+            color: '#fff',
+            preConfirm: () => ({
+                startDate: newStart,
+                endDate: newEnd,
+                isPaid: document.getElementById('renewMonthlyPaid').checked,
+                amount: acc.revenue || 0
+            })
+        });
+
+        if (!result.isConfirmed) return;
+
+        try {
+            window.renewingMonthlyIds[id] = true;
+            await DataManager.renewMonthlyAccount(id, result.value);
+            renderAccounts();
+            checkNotifications();
+            if (document.getElementById('view-dashboard').classList.contains('active')) renderDashboard();
+            showToast('تم تجديد الاشتراك الشهري بنجاح');
+        } catch (error) {
+            console.error('Failed to renew monthly account:', error);
+            Swal.fire({ icon: 'error', title: 'تعذر التجديد الشهري', text: 'حدث خطأ أثناء تحديث الاشتراك.', background: '#111827', color: '#fff' });
+        } finally {
+            window.renewingMonthlyIds[id] = false;
         }
     }
 
@@ -2077,6 +2167,8 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('accDurationDays').value = 30;
         document.getElementById('accRevenue').value = 0;
         document.getElementById('accRefund').value = 0;
+        const billingCycleSelect = document.getElementById('accBillingCycle');
+        if (billingCycleSelect) billingCycleSelect.value = 'custom';
 
         const banner = document.getElementById('planInfoBanner');
         if (banner) banner.style.display = 'none';
@@ -2113,6 +2205,8 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('accDurationDays').value = 30;
         document.getElementById('accRevenue').value = 0;
         document.getElementById('accRefund').value = 0;
+        const billingCycleSelect = document.getElementById('accBillingCycle');
+        if (billingCycleSelect) billingCycleSelect.value = 'custom';
 
         const banner = document.getElementById('planInfoBanner');
         if (banner) banner.style.display = 'none';
@@ -2166,6 +2260,19 @@ document.addEventListener('DOMContentLoaded', () => {
         const isPaidCheck = document.getElementById('accIsPaid');
         const accId = document.getElementById('accId').value;
         const selectedPlanIds = getSelectedPlanIds();
+        const billingCycle = document.getElementById('accBillingCycle') ? document.getElementById('accBillingCycle').value : 'custom';
+        const existingAccount = accId ? DataManager.getAccounts().find(a => a.id === accId) : null;
+        let billingFields = buildBillingFields(startDate, durationDays, billingCycle);
+        if (existingAccount && billingCycle === 'monthly' && existingAccount.billingCycle === 'monthly' && existingAccount.startDate === startDate) {
+            billingFields = {
+                billingCycle: 'monthly',
+                recurringEnabled: true,
+                currentPeriodStart: existingAccount.currentPeriodStart || startDate,
+                currentPeriodEnd: existingAccount.currentPeriodEnd || billingFields.currentPeriodEnd,
+                nextBillingDate: existingAccount.nextBillingDate || existingAccount.currentPeriodEnd || billingFields.nextBillingDate,
+                durationDays: existingAccount.durationDays || billingFields.durationDays
+            };
+        }
 
         const baseData = {
             customerId,
@@ -2173,12 +2280,17 @@ document.addEventListener('DOMContentLoaded', () => {
             username: document.getElementById('accUsername').value.trim(),
             password: document.getElementById('accPassword').value,
             startDate,
-            durationDays,
+            durationDays: billingFields.durationDays,
             revenue,
             refund: document.getElementById('accRefund').value || '0',
             activationCode: document.getElementById('accActivationCode').value.trim(),
             notes: document.getElementById('accNotes').value.trim(),
-            isPaid: isPaidCheck ? isPaidCheck.checked : false
+            isPaid: isPaidCheck ? isPaidCheck.checked : false,
+            billingCycle: billingFields.billingCycle,
+            recurringEnabled: billingFields.recurringEnabled,
+            currentPeriodStart: billingFields.currentPeriodStart,
+            currentPeriodEnd: billingFields.currentPeriodEnd,
+            nextBillingDate: billingFields.nextBillingDate
         };
 
         if (accId) {
@@ -2194,14 +2306,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 for (const planId of selectedPlanIds) {
                     const plan = DataManager.getServicePlanById(planId);
                     const accountData = { ...baseData };
-                    accountData.servicePlanId = planId;
-                    if (plan) {
-                        accountData.platformId = plan.platformId || platformId;
-                        accountData.durationDays = plan.durationDays || durationDays;
-                        accountData.revenue = plan.pricePerMember || revenue;
-                        if (plan.email) accountData.username = plan.email;
-                        if (plan.password) accountData.password = plan.password;
-                    }
+                        accountData.servicePlanId = planId;
+                        if (plan) {
+                            accountData.platformId = plan.platformId || platformId;
+                            if (accountData.billingCycle !== 'monthly') accountData.durationDays = plan.durationDays || durationDays;
+                            accountData.revenue = plan.pricePerMember || revenue;
+                            if (plan.email) accountData.username = plan.email;
+                            if (plan.password) accountData.password = plan.password;
+                        }
                     await DataManager.addAccount(accountData);
                 }
                 showToast(`تم إضافة ${selectedPlanIds.length} اشتراكات بنجاح`);
@@ -2255,6 +2367,8 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('accActivationCode').value = acc.activationCode || '';
         document.getElementById('accNotes').value = acc.notes || '';
         document.getElementById('accountModalTitle').innerText = 'تعديل بيانات الاشتراك';
+        const billingCycleSelect = document.getElementById('accBillingCycle');
+        if (billingCycleSelect) billingCycleSelect.value = acc.billingCycle || 'custom';
 
         const isPaidCheck = document.getElementById('accIsPaid');
         if (isPaidCheck) isPaidCheck.checked = acc.isPaid === true;
