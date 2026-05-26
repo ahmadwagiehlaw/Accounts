@@ -1864,6 +1864,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const defaultEnd = cycleMonths
             ? DataManager.addCalendarMonths(today, cycleMonths)
             : addDaysToDate(today, acc.durationDays || 30);
+        let endDateTouched = false;
 
         const result = await Swal.fire({
             title: 'إعادة تفعيل الاشتراك',
@@ -1885,7 +1886,11 @@ document.addEventListener('DOMContentLoaded', () => {
             didOpen: () => {
                 const startInput = document.getElementById('reactivateStartDate');
                 const endInput = document.getElementById('reactivateEndDate');
+                endInput.addEventListener('change', () => {
+                    endDateTouched = true;
+                });
                 startInput.addEventListener('change', () => {
+                    if (endDateTouched) return;
                     endInput.value = cycleMonths
                         ? DataManager.addCalendarMonths(startInput.value, cycleMonths)
                         : addDaysToDate(startInput.value, acc.durationDays || 30);

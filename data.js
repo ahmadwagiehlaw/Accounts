@@ -428,9 +428,10 @@ class DataManager {
         const endDate = options.endDate || acc.currentPeriodEnd || acc.startDate;
         const durationDays = this.daysBetween(startDate, endDate);
         const isRecurringCycle = !!this.getBillingCycleMonths(acc.billingCycle);
+        const previousLifecycleStatus = acc.lifecycleStatus || this.getAccountStatus(acc).status;
 
         await this.updateAccountLifecycle(id, {
-            previousLifecycleStatus: acc.lifecycleStatus || null,
+            previousLifecycleStatus,
             previousCurrentPeriodStart: acc.currentPeriodStart || acc.startDate || null,
             previousCurrentPeriodEnd: acc.currentPeriodEnd || null,
             previousNextBillingDate: acc.nextBillingDate || null,
