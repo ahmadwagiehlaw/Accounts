@@ -686,8 +686,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Skeletons while loading
         if (!window.isDataLoaded) {
-            document.getElementById('apexDonutChart').innerHTML = '<div class="skeleton skeleton-box" style="height:300px;"></div>';
-            document.getElementById('apexAreaChart').innerHTML = '<div class="skeleton skeleton-box" style="height:300px;"></div>';
+            document.getElementById('apexDonutChart').innerHTML = '<div class="skeleton skeleton-box" style="height:220px;"></div>';
+            document.getElementById('apexAreaChart').innerHTML = '<div class="skeleton skeleton-box" style="height:220px;"></div>';
             return;
         }
 
@@ -714,7 +714,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const donutOptions = {
                     series: platformSeries,
                     labels: platformLabels,
-                    chart: { type: 'donut', height: 320, background: 'transparent' },
+                    chart: { type: 'donut', height: 220, background: 'transparent' },
                     theme: { mode: 'dark' },
                     colors: platformColors,
                     stroke: { show: true, colors: ['#0b0f19'], width: 2 },
@@ -737,7 +737,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!window.areaChartInstance) {
                 const areaOptions = {
                     series: [{ name: 'الإيرادات المتوقعة', data: [10, 41, 35, 51, 49, 62, 69, 91, 148] }],
-                    chart: { type: 'area', height: 320, background: 'transparent', toolbar: { show: false } },
+                    chart: { type: 'area', height: 220, background: 'transparent', toolbar: { show: false } },
                     theme: { mode: 'dark' },
                     colors: ['#8b5cf6'],
                     fill: { type: 'gradient', gradient: { shadeIntensity: 1, opacityFrom: 0.7, opacityTo: 0.1, stops: [0, 90, 100] } },
@@ -814,34 +814,30 @@ document.addEventListener('DOMContentLoaded', () => {
         const warningAccounts = groups.warning;
         const expiredAccounts = groups.expired;
         const unpaidAccounts = groups.unpaid;
+        const seen = new Set();
+        const previewItems = [...expiredAccounts, ...warningAccounts, ...unpaidAccounts]
+            .filter(acc => {
+                if (seen.has(acc.id)) return false;
+                seen.add(acc.id);
+                return true;
+            })
+            .slice(0, 3);
 
         document.getElementById('followup-warning-count').textContent = warningAccounts.length;
         document.getElementById('followup-expired-count').textContent = expiredAccounts.length;
         document.getElementById('followup-unpaid-count').textContent = unpaidAccounts.length;
 
-        let selectedTab = center.dataset.activeTab;
-        if (!selectedTab || !groups[selectedTab] || groups[selectedTab].length === 0) {
-            selectedTab = expiredAccounts.length > 0 ? 'expired'
-                : warningAccounts.length > 0 ? 'warning'
-                    : unpaidAccounts.length > 0 ? 'unpaid'
-                        : 'warning';
-        }
-        center.dataset.activeTab = selectedTab;
-
-        center.querySelectorAll('.followup-tab').forEach(tab => {
-            const isActive = tab.dataset.followupTab === selectedTab;
-            tab.classList.toggle('active', isActive);
-            if (!tab.hasAttribute('data-bound')) {
-                tab.setAttribute('data-bound', 'true');
-                tab.addEventListener('click', () => {
-                    center.dataset.activeTab = tab.dataset.followupTab;
-                    renderFollowUpCenter(DataManager.getAccounts());
-                });
-            }
-        });
-
-        activeList.innerHTML = renderFollowUpItems(groups[selectedTab], selectedTab);
+        center.classList.toggle('is-empty', previewItems.length === 0);
+        activeList.innerHTML = previewItems.length > 0
+            ? renderFollowUpItems(previewItems, 'dashboard')
+            : '<div class="followup-empty dashboard-followup-empty">لا توجد عناصر تحتاج متابعة الآن</div>';
         bindFollowUpActions(center);
+
+        const showAllBtn = document.getElementById('btnFollowupShowAll');
+        if (showAllBtn && !showAllBtn.hasAttribute('data-bound')) {
+            showAllBtn.setAttribute('data-bound', 'true');
+            showAllBtn.addEventListener('click', openNotificationCenter);
+        }
     }
 
     function renderFollowUpItems(items, groupType) {

@@ -217,7 +217,7 @@
 
 
                     <!-- Smart Wallet Card -->
-                    <div class="wallet-card glass-panel mb-4">
+                    <div class="wallet-card glass-panel mb-3">
                         <div class="wallet-main-row"
                             style="display:flex; justify-content:space-between; align-items:center;">
                             <div style="display:flex; align-items:center; gap: 0.75rem;">
@@ -248,7 +248,7 @@
                     </div>
 
                     <!-- Compact Quick Stats Grid -->
-                    <div class="quick-chips-grid mb-4">
+                    <div class="quick-chips-grid mb-3">
                         <div class="quick-chip glass-panel">
                             <i class="fa-solid fa-users text-info"></i>
                             <div class="chip-info">
@@ -278,30 +278,21 @@
                             </div>
                         </div>
                     </div>
-                    <div class="followup-center glass-panel mb-4">
-                        <div class="section-header">
+                    <div class="followup-center dashboard-followup-preview glass-panel mb-3">
+                        <div class="section-header compact-section-header">
                             <h2><i class="fa-solid fa-list-check"></i> مركز المتابعة</h2>
+                            <button class="btn btn-secondary btn-sm" id="btnFollowupShowAll" type="button">
+                                عرض الكل
+                            </button>
                         </div>
-                        <div class="followup-tabs" id="followupTabs">
-                            <button class="followup-tab" type="button" data-followup-tab="warning">
-                                <i class="fa-solid fa-clock text-warning"></i>
-                                <span>قاربت على الانتهاء</span>
-                                <strong id="followup-warning-count">0</strong>
-                            </button>
-                            <button class="followup-tab" type="button" data-followup-tab="expired">
-                                <i class="fa-solid fa-circle-xmark text-danger"></i>
-                                <span>منتهية</span>
-                                <strong id="followup-expired-count">0</strong>
-                            </button>
-                            <button class="followup-tab" type="button" data-followup-tab="unpaid">
-                                <i class="fa-solid fa-hand-holding-dollar text-info"></i>
-                                <span>غير مسددة</span>
-                                <strong id="followup-unpaid-count">0</strong>
-                            </button>
+                        <div class="dashboard-followup-summary">
+                            <span class="followup-summary-pill danger">منتهية <strong id="followup-expired-count">0</strong></span>
+                            <span class="followup-summary-pill warning">قاربت <strong id="followup-warning-count">0</strong></span>
+                            <span class="followup-summary-pill info">غير مسددة <strong id="followup-unpaid-count">0</strong></span>
                         </div>
                         <div class="followup-list" id="followup-active-list"></div>
                     </div>
-                    <div class="dashboard-charts-area glass-panel mb-4">
+                    <div class="dashboard-charts-area glass-panel mb-3">
                         <div class="section-header"
                             style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
                             <h2 id="chartTitle"><i class="fa-solid fa-chart-pie"></i> توزيع الاشتراكات</h2>
@@ -313,8 +304,8 @@
                                     style="padding:0.25rem 0.5rem;"><i class="fa-solid fa-chart-area"></i></button>
                             </div>
                         </div>
-                        <div id="apexDonutChart" style="min-height: 300px; width: 100%;"></div>
-                        <div id="apexAreaChart" style="min-height: 300px; width: 100%; display: none;"></div>
+                        <div id="apexDonutChart" style="min-height: 220px; width: 100%;"></div>
+                        <div id="apexAreaChart" style="min-height: 220px; width: 100%; display: none;"></div>
                     </div>
                     <div class="dashboard-recent glass-panel">
                         <div class="section-header">
