@@ -61,6 +61,90 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    function buildFollowUpNotificationGroups(accounts = DataManager.getAccounts()) {
+        const actionableAccounts = accounts.filter(acc => {
+            const status = DataManager.getAccountStatus(acc).status;
+            return !['closed', 'paused', 'cancelled'].includes(status);
+        });
+        const expired = actionableAccounts.filter(acc => DataManager.getAccountStatus(acc).status === 'expired');
+        const warning = actionableAccounts.filter(acc => DataManager.getAccountStatus(acc).status === 'warning');
+        const unpaid = actionableAccounts.filter(acc => acc.isPaid !== true);
+        const uniqueIds = new Set([...expired, ...warning, ...unpaid].map(acc => acc.id));
+        return {
+            urgent: expired,
+            expired,
+            warning,
+            unpaid,
+            total: uniqueIds.size
+        };
+    }
+
+    function updateHeaderNotificationBadge(groups = buildFollowUpNotificationGroups()) {
+        const badge = document.getElementById('notificationBellBadge');
+        const button = document.getElementById('btnNotificationCenter');
+        if (!badge || !button) return;
+
+        const total = groups.total;
+        button.classList.toggle('has-alerts', total > 0);
+        button.classList.toggle('has-expired', groups.expired.length > 0);
+        button.classList.toggle('has-warning', groups.expired.length === 0 && groups.warning.length > 0);
+
+        if (total === 0) {
+            badge.style.display = 'none';
+            badge.textContent = '0';
+            return;
+        }
+
+        badge.style.display = 'inline-flex';
+        badge.textContent = total > 99 ? '99+' : String(total);
+    }
+
+    function getDefaultNotificationTab(groups) {
+        if (groups.urgent.length > 0) return 'urgent';
+        if (groups.warning.length > 0) return 'warning';
+        if (groups.unpaid.length > 0) return 'unpaid';
+        return 'urgent';
+    }
+
+    function renderNotificationCenterPanel() {
+        const modal = document.getElementById('notificationCenterModal');
+        const list = document.getElementById('notificationCenterList');
+        if (!modal || !list) return;
+
+        const groups = buildFollowUpNotificationGroups();
+        updateHeaderNotificationBadge(groups);
+
+        document.getElementById('notification-urgent-count').textContent = groups.urgent.length;
+        document.getElementById('notification-warning-count').textContent = groups.warning.length;
+        document.getElementById('notification-unpaid-count').textContent = groups.unpaid.length;
+
+        let selectedTab = modal.dataset.activeTab;
+        if (!selectedTab || !groups[selectedTab] || groups[selectedTab].length === 0) {
+            selectedTab = getDefaultNotificationTab(groups);
+        }
+        modal.dataset.activeTab = selectedTab;
+
+        modal.querySelectorAll('[data-notification-tab]').forEach(tab => {
+            const isActive = tab.dataset.notificationTab === selectedTab;
+            tab.classList.toggle('active', isActive);
+            if (!tab.hasAttribute('data-bound')) {
+                tab.setAttribute('data-bound', 'true');
+                tab.addEventListener('click', () => {
+                    modal.dataset.activeTab = tab.dataset.notificationTab;
+                    renderNotificationCenterPanel();
+                });
+            }
+        });
+
+        list.innerHTML = renderFollowUpItems(groups[selectedTab], selectedTab);
+        bindFollowUpActions(modal);
+    }
+
+    function openNotificationCenter() {
+        renderNotificationCenterPanel();
+        openModal('notificationCenterModal');
+    }
+
     // ============================================================
     //  FIREBASE AUTHENTICATION & SYNC
     // ============================================================
@@ -314,6 +398,11 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    const btnNotificationCenter = document.getElementById('btnNotificationCenter');
+    if (btnNotificationCenter) {
+        btnNotificationCenter.addEventListener('click', openNotificationCenter);
+    }
+
     // PWA Installation & iOS Handling
     let deferredPrompt;
     const pwaBanner = document.getElementById('pwaInstallBanner');
@@ -399,48 +488,70 @@ document.addEventListener('DOMContentLoaded', () => {
         const list = document.getElementById('notificationBarContent');
         if (!bar || !list) return;
 
-        const { expiring, expired } = DataManager.getNotifications();
-        const total = expiring.length + expired.length;
+        const groups = buildFollowUpNotificationGroups();
+        const expired = groups.expired;
+        const expiring = groups.warning;
+        const total = expired.length + expiring.length;
+        updateHeaderNotificationBadge(groups);
+
+        if (document.getElementById('btnNotificationCenter')) {
+            bar.style.display = 'none';
+            if (document.getElementById('notificationCenterModal')?.classList.contains('show')) {
+                renderNotificationCenterPanel();
+            }
+            return;
+        }
 
         if (total === 0) {
             bar.style.display = 'none';
+            if (document.getElementById('notificationCenterModal')?.classList.contains('show')) {
+                renderNotificationCenterPanel();
+            }
             return;
         }
 
         bar.style.display = 'flex';
         let notificationHtml = '';
 
-        expired.forEach(n => {
-            const acc = DataManager.getAccounts().find(a => a.id === n.id);
-            const cust = acc ? DataManager.getCustomerById(acc.customerId) : null;
-            const hasPhone = !!(cust && cust.phone) || !!(acc && acc.customerPhone);
+        expired.forEach(acc => {
+            const cust = DataManager.getCustomerById(acc.customerId);
+            const platform = DataManager.getPlatformById(acc.platformId);
+            const custName = cust ? cust.name : (acc.customerName || 'عميل');
+            const platName = platform ? platform.name : '';
+            const hasPhone = !!(cust && cust.phone) || !!acc.customerPhone;
             notificationHtml += `<span class="notif-item notif-expired">
                 <i class="fa-solid fa-circle-xmark"></i>
-                <strong>${escapeHtml(n.custName)}</strong> — ${escapeHtml(n.platName)}: انتهى الاشتراك
+                <strong>${escapeHtml(custName)}</strong> — ${escapeHtml(platName)}: انتهى الاشتراك
                 <span class="notif-actions">
-                    <button class="notif-action-btn notif-renew-btn" data-id="${escapeAttr(n.id)}" type="button">تجديد</button>
-                    <button class="notif-action-btn notif-close-btn" data-id="${escapeAttr(n.id)}" type="button">إغلاق</button>
-                    ${hasPhone ? `<button class="notif-action-btn notif-whatsapp-btn" data-id="${escapeAttr(n.id)}" type="button"><i class="fa-brands fa-whatsapp"></i></button>` : ''}
+                    <button class="notif-action-btn notif-renew-btn" data-id="${escapeAttr(acc.id)}" type="button">تجديد</button>
+                    <button class="notif-action-btn notif-close-btn" data-id="${escapeAttr(acc.id)}" type="button">إغلاق</button>
+                    ${hasPhone ? `<button class="notif-action-btn notif-whatsapp-btn" data-id="${escapeAttr(acc.id)}" type="button"><i class="fa-brands fa-whatsapp"></i></button>` : ''}
                 </span>
             </span>`;
         });
 
-        expiring.forEach(n => {
-            const acc = DataManager.getAccounts().find(a => a.id === n.id);
-            const cust = acc ? DataManager.getCustomerById(acc.customerId) : null;
-            const hasPhone = !!(cust && cust.phone) || !!(acc && acc.customerPhone);
+        expiring.forEach(acc => {
+            const status = DataManager.getAccountStatus(acc);
+            const cust = DataManager.getCustomerById(acc.customerId);
+            const platform = DataManager.getPlatformById(acc.platformId);
+            const custName = cust ? cust.name : (acc.customerName || 'عميل');
+            const platName = platform ? platform.name : '';
+            const hasPhone = !!(cust && cust.phone) || !!acc.customerPhone;
             notificationHtml += `<span class="notif-item notif-warning">
                 <i class="fa-solid fa-triangle-exclamation"></i>
-                <strong>${escapeHtml(n.custName)}</strong> — ${escapeHtml(n.platName)}: يتبقى ${n.daysLeft} يوم
+                <strong>${escapeHtml(custName)}</strong> — ${escapeHtml(platName)}: يتبقى ${status.daysLeft} يوم
                 <span class="notif-actions">
-                    <button class="notif-action-btn notif-renew-btn" data-id="${escapeAttr(n.id)}" type="button">تجديد</button>
-                    ${hasPhone ? `<button class="notif-action-btn notif-whatsapp-btn" data-id="${escapeAttr(n.id)}" type="button"><i class="fa-brands fa-whatsapp"></i></button>` : ''}
+                    <button class="notif-action-btn notif-renew-btn" data-id="${escapeAttr(acc.id)}" type="button">تجديد</button>
+                    ${hasPhone ? `<button class="notif-action-btn notif-whatsapp-btn" data-id="${escapeAttr(acc.id)}" type="button"><i class="fa-brands fa-whatsapp"></i></button>` : ''}
                 </span>
             </span>`;
         });
 
         list.innerHTML = notificationHtml;
         bindNotificationActions(list);
+        if (document.getElementById('notificationCenterModal')?.classList.contains('show')) {
+            renderNotificationCenterPanel();
+        }
         triggerDailyLocalNotification(total);
         return;
 
@@ -699,11 +810,10 @@ document.addEventListener('DOMContentLoaded', () => {
         const activeList = document.getElementById('followup-active-list');
         if (!center || !activeList) return;
 
-        const activeAccounts = accounts.filter(acc => !['closed', 'paused', 'cancelled'].includes(DataManager.getAccountStatus(acc).status));
-        const warningAccounts = activeAccounts.filter(acc => DataManager.getAccountStatus(acc).status === 'warning');
-        const expiredAccounts = activeAccounts.filter(acc => DataManager.getAccountStatus(acc).status === 'expired');
-        const unpaidAccounts = activeAccounts.filter(acc => acc.isPaid !== true);
-        const groups = { warning: warningAccounts, expired: expiredAccounts, unpaid: unpaidAccounts };
+        const groups = buildFollowUpNotificationGroups(accounts);
+        const warningAccounts = groups.warning;
+        const expiredAccounts = groups.expired;
+        const unpaidAccounts = groups.unpaid;
 
         document.getElementById('followup-warning-count').textContent = warningAccounts.length;
         document.getElementById('followup-expired-count').textContent = expiredAccounts.length;

@@ -151,6 +151,10 @@
                     <button class="btn-icon" id="btnDisplaySettings" title="إعدادات العرض">
                         <i class="fa-solid fa-sliders"></i>
                     </button>
+                    <button class="btn-icon notification-bell-btn" id="btnNotificationCenter" title="مركز التنبيهات والمتابعة">
+                        <i class="fa-solid fa-bell"></i>
+                        <span class="notification-bell-badge" id="notificationBellBadge" style="display:none;">0</span>
+                    </button>
                     <button class="btn btn-primary" id="btnNewAccount">
                         <i class="fa-solid fa-plus"></i><span class="d-none d-sm-inline"> اشتراك جديد</span>
                     </button>
@@ -868,6 +872,35 @@
             <div class="modal-body" id="credentialsModalBody"></div>
             <div class="modal-footer">
                 <button class="btn btn-secondary" data-dismiss="credentialsModal">إغلاق</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal glass-modal" id="notificationCenterModal">
+        <div class="modal-content glass-panel notification-center-modal">
+            <div class="modal-header">
+                <h3><i class="fa-solid fa-bell"></i> مركز التنبيهات والمتابعة</h3>
+                <button class="modal-close" data-dismiss="notificationCenterModal"><i class="fa-solid fa-times"></i></button>
+            </div>
+            <div class="modal-body">
+                <div class="followup-tabs notification-center-tabs" id="notificationCenterTabs">
+                    <button class="followup-tab" type="button" data-notification-tab="urgent">
+                        <i class="fa-solid fa-circle-exclamation text-danger"></i>
+                        <span>عاجل</span>
+                        <strong id="notification-urgent-count">0</strong>
+                    </button>
+                    <button class="followup-tab" type="button" data-notification-tab="warning">
+                        <i class="fa-solid fa-clock text-warning"></i>
+                        <span>قاربت على الانتهاء</span>
+                        <strong id="notification-warning-count">0</strong>
+                    </button>
+                    <button class="followup-tab" type="button" data-notification-tab="unpaid">
+                        <i class="fa-solid fa-hand-holding-dollar text-info"></i>
+                        <span>غير مسددة</span>
+                        <strong id="notification-unpaid-count">0</strong>
+                    </button>
+                </div>
+                <div class="followup-list notification-center-list" id="notificationCenterList"></div>
             </div>
         </div>
     </div>
