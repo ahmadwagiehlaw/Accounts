@@ -693,24 +693,43 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function renderFollowUpCenter(accounts) {
-        const warningList = document.getElementById('followup-warning-list');
-        const expiredList = document.getElementById('followup-expired-list');
-        const unpaidList = document.getElementById('followup-unpaid-list');
-        if (!warningList || !expiredList || !unpaidList) return;
+        const center = document.querySelector('.followup-center');
+        const activeList = document.getElementById('followup-active-list');
+        if (!center || !activeList) return;
 
         const activeAccounts = accounts.filter(acc => DataManager.getAccountStatus(acc).status !== 'closed');
         const warningAccounts = activeAccounts.filter(acc => DataManager.getAccountStatus(acc).status === 'warning');
         const expiredAccounts = activeAccounts.filter(acc => DataManager.getAccountStatus(acc).status === 'expired');
         const unpaidAccounts = activeAccounts.filter(acc => acc.isPaid !== true);
+        const groups = { warning: warningAccounts, expired: expiredAccounts, unpaid: unpaidAccounts };
 
         document.getElementById('followup-warning-count').textContent = warningAccounts.length;
         document.getElementById('followup-expired-count').textContent = expiredAccounts.length;
         document.getElementById('followup-unpaid-count').textContent = unpaidAccounts.length;
 
-        warningList.innerHTML = renderFollowUpItems(warningAccounts, 'warning');
-        expiredList.innerHTML = renderFollowUpItems(expiredAccounts, 'expired');
-        unpaidList.innerHTML = renderFollowUpItems(unpaidAccounts, 'unpaid');
-        bindFollowUpActions(document.getElementById('view-dashboard'));
+        let selectedTab = center.dataset.activeTab;
+        if (!selectedTab || !groups[selectedTab] || groups[selectedTab].length === 0) {
+            selectedTab = expiredAccounts.length > 0 ? 'expired'
+                : warningAccounts.length > 0 ? 'warning'
+                    : unpaidAccounts.length > 0 ? 'unpaid'
+                        : 'warning';
+        }
+        center.dataset.activeTab = selectedTab;
+
+        center.querySelectorAll('.followup-tab').forEach(tab => {
+            const isActive = tab.dataset.followupTab === selectedTab;
+            tab.classList.toggle('active', isActive);
+            if (!tab.hasAttribute('data-bound')) {
+                tab.setAttribute('data-bound', 'true');
+                tab.addEventListener('click', () => {
+                    center.dataset.activeTab = tab.dataset.followupTab;
+                    renderFollowUpCenter(DataManager.getAccounts());
+                });
+            }
+        });
+
+        activeList.innerHTML = renderFollowUpItems(groups[selectedTab], selectedTab);
+        bindFollowUpActions(center);
     }
 
     function renderFollowUpItems(items, groupType) {
@@ -731,6 +750,10 @@ document.addEventListener('DOMContentLoaded', () => {
             const paymentClass = isPaid ? 'text-success' : 'text-danger';
             const canClose = statusInfo.status === 'expired';
             const canMarkPaid = !isPaid;
+            const canInvoice = acc.revenue !== undefined && acc.revenue !== '' && !Number.isNaN(Number(acc.revenue));
+            const overlapBadge = groupType === 'unpaid' && (statusInfo.status === 'expired' || statusInfo.status === 'warning')
+                ? `<span class="followup-overlap-badge status-${statusInfo.status}">${statusInfo.status === 'expired' ? 'منتهي' : 'قارب على الانتهاء'}</span>`
+                : '';
 
             return `<div class="followup-item">
                 <div class="followup-main">
@@ -740,6 +763,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     </div>
                     <div class="followup-meta">
                         <span class="status-badge status-${statusInfo.status}">${statusInfo.label}</span>
+                        ${overlapBadge}
                         <span>${escapeHtml(timingText)}</span>
                         <span class="${paymentClass}">${paymentLabel}</span>
                     </div>
@@ -748,7 +772,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     <button class="btn-icon followup-renew-btn" data-id="${escapeAttr(acc.id)}" title="تجديد"><i class="fa-solid fa-rotate-right text-primary"></i></button>
                     ${canClose ? `<button class="btn-icon followup-close-btn" data-id="${escapeAttr(acc.id)}" title="إغلاق"><i class="fa-solid fa-circle-stop text-danger"></i></button>` : ''}
                     ${phone ? `<button class="btn-icon followup-whatsapp-btn" data-id="${escapeAttr(acc.id)}" title="واتساب"><i class="fa-brands fa-whatsapp text-success"></i></button>` : ''}
-                    <button class="btn-icon followup-invoice-btn" data-id="${escapeAttr(acc.id)}" title="فاتورة"><i class="fa-solid fa-file-invoice-dollar text-warning"></i></button>
+                    ${canInvoice ? `<button class="btn-icon followup-invoice-btn" data-id="${escapeAttr(acc.id)}" title="فاتورة"><i class="fa-solid fa-file-invoice-dollar text-warning"></i></button>` : ''}
                     ${canMarkPaid ? `<button class="btn-icon followup-paid-btn" data-id="${escapeAttr(acc.id)}" title="تعليم كمدفوع"><i class="fa-solid fa-circle-check text-success"></i></button>` : ''}
                 </div>
             </div>`;
@@ -760,7 +784,8 @@ document.addEventListener('DOMContentLoaded', () => {
             const startDate = new Date(acc.startDate);
             const endDate = new Date(startDate);
             endDate.setDate(endDate.getDate() + parseInt(acc.durationDays || 30));
-            const expiredDays = Math.max(1, Math.floor((new Date() - endDate) / (1000 * 60 * 60 * 24)));
+            const expiredDays = Math.floor((new Date() - endDate) / (1000 * 60 * 60 * 24));
+            if (expiredDays < 1) return 'منتهي اليوم';
             return `منتهي منذ ${expiredDays} يوم`;
         }
         if (statusInfo.status === 'warning') {

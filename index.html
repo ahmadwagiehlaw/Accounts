@@ -278,32 +278,24 @@
                         <div class="section-header">
                             <h2><i class="fa-solid fa-list-check"></i> مركز المتابعة</h2>
                         </div>
-                        <div class="followup-grid">
-                            <div class="followup-group">
-                                <div class="followup-group-header">
-                                    <i class="fa-solid fa-clock text-warning"></i>
-                                    <span>اشتراكات قاربت على الانتهاء</span>
-                                    <strong id="followup-warning-count">0</strong>
-                                </div>
-                                <div class="followup-list" id="followup-warning-list"></div>
-                            </div>
-                            <div class="followup-group">
-                                <div class="followup-group-header">
-                                    <i class="fa-solid fa-circle-xmark text-danger"></i>
-                                    <span>اشتراكات منتهية</span>
-                                    <strong id="followup-expired-count">0</strong>
-                                </div>
-                                <div class="followup-list" id="followup-expired-list"></div>
-                            </div>
-                            <div class="followup-group">
-                                <div class="followup-group-header">
-                                    <i class="fa-solid fa-hand-holding-dollar text-info"></i>
-                                    <span>اشتراكات غير مسددة</span>
-                                    <strong id="followup-unpaid-count">0</strong>
-                                </div>
-                                <div class="followup-list" id="followup-unpaid-list"></div>
-                            </div>
+                        <div class="followup-tabs" id="followupTabs">
+                            <button class="followup-tab" type="button" data-followup-tab="warning">
+                                <i class="fa-solid fa-clock text-warning"></i>
+                                <span>قاربت على الانتهاء</span>
+                                <strong id="followup-warning-count">0</strong>
+                            </button>
+                            <button class="followup-tab" type="button" data-followup-tab="expired">
+                                <i class="fa-solid fa-circle-xmark text-danger"></i>
+                                <span>منتهية</span>
+                                <strong id="followup-expired-count">0</strong>
+                            </button>
+                            <button class="followup-tab" type="button" data-followup-tab="unpaid">
+                                <i class="fa-solid fa-hand-holding-dollar text-info"></i>
+                                <span>غير مسددة</span>
+                                <strong id="followup-unpaid-count">0</strong>
+                            </button>
                         </div>
+                        <div class="followup-list" id="followup-active-list"></div>
                     </div>
                     <div class="dashboard-charts-area glass-panel mb-4">
                         <div class="section-header"

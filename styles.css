@@ -743,40 +743,51 @@ h6 {
     padding: 1.5rem;
 }
 
-.followup-grid {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 1rem;
-}
-
-.followup-group {
-    min-width: 0;
-}
-
-.followup-group-header {
+.followup-tabs {
     display: flex;
-    align-items: center;
-    gap: 0.45rem;
-    margin-bottom: 0.75rem;
-    color: var(--text-light);
-    font-weight: 700;
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+    overflow-x: auto;
+    padding-bottom: 0.15rem;
 }
 
-.followup-group-header strong {
-    margin-right: auto;
-    min-width: 1.6rem;
-    height: 1.6rem;
+.followup-tab {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem;
+    min-height: 2.4rem;
+    padding: 0.45rem 0.75rem;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: var(--radius-md);
+    background: rgba(255, 255, 255, 0.04);
+    color: var(--text-muted);
+    cursor: pointer;
+    white-space: nowrap;
+    font-family: inherit;
+    font-size: 0.88rem;
+}
+
+.followup-tab.active {
+    background: rgba(99, 102, 241, 0.16);
+    border-color: rgba(99, 102, 241, 0.35);
+    color: var(--text-light);
+}
+
+.followup-tab strong {
+    min-width: 1.45rem;
+    height: 1.45rem;
     display: inline-flex;
     align-items: center;
     justify-content: center;
     border-radius: 999px;
-    background: rgba(255, 255, 255, 0.08);
-    font-size: 0.8rem;
+    background: rgba(255, 255, 255, 0.1);
+    font-size: 0.75rem;
 }
 
 .followup-list {
-    display: flex;
-    flex-direction: column;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 0.55rem;
 }
 
@@ -815,6 +826,13 @@ h6 {
     margin-top: 0.45rem;
 }
 
+.followup-overlap-badge {
+    padding: 0.18rem 0.5rem;
+    border-radius: 999px;
+    font-size: 0.72rem;
+    font-weight: 700;
+}
+
 .followup-actions {
     display: flex;
     flex-wrap: wrap;
@@ -833,12 +851,22 @@ h6 {
 }
 
 @media (max-width: 1024px) {
-    .followup-grid {
+    .followup-list {
         grid-template-columns: 1fr;
     }
 }
 
 @media (max-width: 520px) {
+    .followup-tabs {
+        gap: 0.35rem;
+    }
+
+    .followup-tab {
+        flex: 0 0 auto;
+        font-size: 0.82rem;
+        padding-inline: 0.6rem;
+    }
+
     .followup-item {
         flex-direction: column;
     }
