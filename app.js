@@ -797,27 +797,110 @@ document.addEventListener('DOMContentLoaded', () => {
         return `متبقي ${statusInfo.daysLeft} يوم`;
     }
 
-    function buildBillingFields(startDate, durationDays, billingCycle) {
+    let accountEndDateManuallyEdited = false;
+
+    function addDaysToDate(startDate, durationDays) {
+        const date = new Date(startDate);
+        date.setDate(date.getDate() + (parseInt(durationDays, 10) || 30));
+        return DataManager.formatDate(date);
+    }
+
+    function buildBillingFields(startDate, durationDays, billingCycle, endDateOverride = '') {
         const cycle = billingCycle || 'custom';
-        if (cycle === 'monthly') {
-            const currentPeriodEnd = DataManager.addCalendarMonths(startDate, 1);
+        const parsedDuration = parseInt(durationDays, 10) || 30;
+        const monthCount = DataManager.getBillingCycleMonths(cycle);
+        const calculatedEndDate = monthCount
+            ? DataManager.addCalendarMonths(startDate, monthCount)
+            : addDaysToDate(startDate, parsedDuration);
+        const currentPeriodEnd = endDateOverride || calculatedEndDate;
+        const syncedDuration = DataManager.daysBetween(startDate, currentPeriodEnd);
+
+        if (monthCount) {
             return {
-                billingCycle: 'monthly',
+                billingCycle: cycle,
                 recurringEnabled: true,
                 currentPeriodStart: startDate,
                 currentPeriodEnd,
                 nextBillingDate: currentPeriodEnd,
-                durationDays: DataManager.daysBetween(startDate, currentPeriodEnd)
+                durationDays: syncedDuration
             };
         }
         return {
             billingCycle: cycle,
             recurringEnabled: false,
-            currentPeriodStart: '',
-            currentPeriodEnd: '',
+            currentPeriodStart: startDate,
+            currentPeriodEnd,
             nextBillingDate: '',
-            durationDays
+            durationDays: syncedDuration
         };
+    }
+
+    function syncAccountDurationFromEndDate() {
+        const startInput = document.getElementById('accStartDate');
+        const endInput = document.getElementById('accEndDate');
+        const durationInput = document.getElementById('accDurationDays');
+        if (!startInput || !endInput || !durationInput || !startInput.value || !endInput.value) return;
+        durationInput.value = DataManager.daysBetween(startInput.value, endInput.value);
+    }
+
+    function setAccountEndDate(endDate, manual = false) {
+        const endInput = document.getElementById('accEndDate');
+        if (!endInput || !endDate) return;
+        endInput.value = endDate;
+        if (manual) accountEndDateManuallyEdited = true;
+        syncAccountDurationFromEndDate();
+    }
+
+    function syncAccountEndDateFromDuration(manual = true) {
+        const startInput = document.getElementById('accStartDate');
+        const durationInput = document.getElementById('accDurationDays');
+        if (!startInput || !durationInput || !startInput.value) return;
+        setAccountEndDate(addDaysToDate(startInput.value, durationInput.value), manual);
+    }
+
+    function refreshAccountEndDateFromSelectedPlan() {
+        if (accountEndDateManuallyEdited) {
+            syncAccountDurationFromEndDate();
+            return;
+        }
+
+        const selectedPlanIds = getSelectedPlanIds();
+        const plan = selectedPlanIds.length > 0 ? DataManager.getServicePlanById(selectedPlanIds[0]) : null;
+        const startDate = document.getElementById('accStartDate').value || new Date().toISOString().split('T')[0];
+        const durationDays = plan ? (plan.durationDays || 30) : (document.getElementById('accDurationDays').value || 30);
+        const cycle = plan
+            ? DataManager.normalizePlanBillingCycle(plan)
+            : (document.getElementById('accBillingCycle') ? document.getElementById('accBillingCycle').value : 'custom');
+        const billingFields = buildBillingFields(startDate, durationDays, cycle);
+        setAccountEndDate(billingFields.currentPeriodEnd, false);
+    }
+
+    const accStartDateInput = document.getElementById('accStartDate');
+    const accEndDateInput = document.getElementById('accEndDate');
+    const accDurationInput = document.getElementById('accDurationDays');
+    const accBillingCycleInput = document.getElementById('accBillingCycle');
+    if (accStartDateInput) {
+        accStartDateInput.addEventListener('change', () => {
+            if (accountEndDateManuallyEdited) syncAccountDurationFromEndDate();
+            else refreshAccountEndDateFromSelectedPlan();
+        });
+    }
+    if (accEndDateInput) {
+        accEndDateInput.addEventListener('change', () => {
+            accountEndDateManuallyEdited = true;
+            syncAccountDurationFromEndDate();
+        });
+    }
+    if (accDurationInput) {
+        accDurationInput.addEventListener('change', () => {
+            syncAccountEndDateFromDuration(true);
+        });
+    }
+    if (accBillingCycleInput) {
+        accBillingCycleInput.addEventListener('change', () => {
+            if (accountEndDateManuallyEdited) syncAccountDurationFromEndDate();
+            else refreshAccountEndDateFromSelectedPlan();
+        });
     }
 
     function bindFollowUpActions(container) {
@@ -1201,6 +1284,52 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
+    function getBillingCycleLabel(cycle) {
+        const labels = {
+            custom: 'أيام مخصصة',
+            custom_days: 'أيام مخصصة',
+            monthly: 'شهري',
+            quarterly: 'ربع سنوي',
+            semi_annual: 'نصف سنوي',
+            yearly: 'سنوي'
+        };
+        return labels[cycle] || labels.custom;
+    }
+
+    function getBillingCycleBadge(cycle, extraClass = '') {
+        return `<span class="status-badge billing-cycle-badge ${extraClass}">${getBillingCycleLabel(cycle)}</span>`;
+    }
+
+    function getPlanCompatibilityDuration(cycle, durationDays) {
+        const parsedDuration = parseInt(durationDays, 10);
+        if (cycle === 'custom_days') return parsedDuration || 365;
+
+        const months = DataManager.getBillingCycleMonths(cycle);
+        if (!months) return parsedDuration || 365;
+
+        const today = new Date().toISOString().split('T')[0];
+        return DataManager.daysBetween(today, DataManager.addCalendarMonths(today, months));
+    }
+
+    function syncPlanBillingCycleUi() {
+        const cycleSelect = document.getElementById('planBillingCycle');
+        const durationInput = document.getElementById('planDurationDays');
+        if (!cycleSelect || !durationInput) return;
+        const isCustom = cycleSelect.value === 'custom_days';
+        const durationGroup = durationInput.closest('.form-group');
+        durationInput.disabled = !isCustom;
+        durationInput.required = isCustom;
+        if (durationGroup) {
+            durationGroup.classList.toggle('is-disabled', !isCustom);
+            durationGroup.style.display = isCustom ? '' : 'none';
+        }
+    }
+
+    const planBillingCycleSelect = document.getElementById('planBillingCycle');
+    if (planBillingCycleSelect) {
+        planBillingCycleSelect.addEventListener('change', syncPlanBillingCycleUi);
+    }
+
     function populatePlanPlatformsDropdown(selectedId) {
         const select = document.getElementById('planPlatform');
         if (!select) return;
@@ -1230,8 +1359,12 @@ document.addEventListener('DOMContentLoaded', () => {
         plans.forEach(plan => {
             const platform = DataManager.getPlatformById(plan.platformId);
             const membersCount = DataManager.getServicePlanMembersCount(plan.id);
-            const statusInfo = DataManager.getAccountStatus({ startDate: plan.startDate, durationDays: plan.durationDays || 365 });
             const planFin = DataManager.getPlanFinancials(plan.id);
+            const planCycle = DataManager.normalizePlanBillingCycle(plan);
+            const billingBadge = getBillingCycleBadge(planCycle);
+            const durationText = planCycle === 'custom_days'
+                ? `${parseInt(plan.durationDays || 365, 10)} يوم`
+                : 'تحسب من تاريخ الاشتراك';
 
             const maskedEmail = plan.email ? plan.email.replace(/(.{2})(.*)(@.*)/, '$1***$3') : '—';
 
@@ -1246,12 +1379,12 @@ document.addEventListener('DOMContentLoaded', () => {
                         <h3>${escapeHtml(plan.name || (platform ? platform.name : 'خطة'))}</h3>
                         <small class="text-muted">${platform ? escapeHtml(platform.name) : 'غير محدد'}</small>
                     </div>
-                    <span class="status-badge status-${statusInfo.status}">${statusInfo.label}</span>
+                    ${billingBadge}
                 </div>
                 <div class="plan-card-body">
                     <div class="plan-stat"><i class="fa-solid fa-users text-primary"></i> <span>${membersCount} عضو</span></div>
                     <div class="plan-stat"><i class="fa-solid fa-tag text-success"></i> <span>${Number(plan.pricePerMember || 0).toLocaleString('ar-EG')} ج.م / عضو</span></div>
-                    <div class="plan-stat"><i class="fa-solid fa-calendar-day text-info"></i> <span>${plan.startDate || '—'}</span></div>
+                    <div class="plan-stat"><i class="fa-solid fa-calendar-day text-info"></i> <span>${durationText}</span></div>
                     <div class="plan-stat"><i class="fa-solid fa-envelope text-muted"></i> <span>${escapeHtml(maskedEmail)}</span></div>
                     ${plan.registrationCost ? `<div class="plan-stat"><i class="fa-solid fa-receipt text-warning"></i> <span>تكلفة الخطة: ${Number(plan.registrationCost).toLocaleString('ar-EG')} ج.م</span></div>` : ''}
                     <div class="plan-stat" style="border-top:1px solid rgba(255,255,255,0.06); padding-top:0.5rem; margin-top:0.3rem;">
@@ -1292,7 +1425,10 @@ document.addEventListener('DOMContentLoaded', () => {
         if (title) title.innerText = 'إضافة خطة اشتراك جديدة';
         const passInput = document.getElementById('planPassword');
         if (passInput) passInput.type = 'password';
+        const cycleSelect = document.getElementById('planBillingCycle');
+        if (cycleSelect) cycleSelect.value = 'custom_days';
         populatePlanPlatformsDropdown('');
+        syncPlanBillingCycleUi();
         openModal('planModal');
     }
 
@@ -1310,6 +1446,9 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('planRegistrationCost').value = plan.registrationCost || '';
         document.getElementById('planPricePerMember').value = plan.pricePerMember || '';
         document.getElementById('planNotes').value = plan.notes || '';
+        const cycleSelect = document.getElementById('planBillingCycle');
+        if (cycleSelect) cycleSelect.value = DataManager.normalizePlanBillingCycle(plan);
+        syncPlanBillingCycleUi();
         document.getElementById('planModalTitle').innerText = 'تعديل خطة الاشتراك';
         openModal('planModal');
     }
@@ -1318,9 +1457,17 @@ document.addEventListener('DOMContentLoaded', () => {
         e.preventDefault();
         const platformId = document.getElementById('planPlatform').value;
         const startDate = document.getElementById('planStartDate').value;
+        const billingCycle = document.getElementById('planBillingCycle').value || 'custom_days';
+        const rawDurationDays = document.getElementById('planDurationDays').value;
+        const durationDays = getPlanCompatibilityDuration(billingCycle, rawDurationDays);
 
-        if (!platformId || !startDate) {
-            Swal.fire({ icon: 'error', title: 'بيانات ناقصة', text: 'يرجى اختيار المنصة وتاريخ البدء على الأقل', background: '#111827', color: '#fff' });
+        if (!platformId) {
+            Swal.fire({ icon: 'error', title: 'بيانات ناقصة', text: 'يرجى اختيار المنصة على الأقل', background: '#111827', color: '#fff' });
+            return;
+        }
+
+        if (billingCycle === 'custom_days' && (!parseInt(rawDurationDays, 10) || parseInt(rawDurationDays, 10) < 1)) {
+            Swal.fire({ icon: 'error', title: 'مدة غير صحيحة', text: 'مدة الخطة مطلوبة فقط عند اختيار أيام مخصصة.', background: '#111827', color: '#fff' });
             return;
         }
 
@@ -1328,7 +1475,8 @@ document.addEventListener('DOMContentLoaded', () => {
             platformId,
             name: document.getElementById('planName').value.trim(),
             startDate,
-            durationDays: parseInt(document.getElementById('planDurationDays').value) || 365,
+            billingCycle,
+            durationDays,
             email: document.getElementById('planEmail').value.trim(),
             password: document.getElementById('planPassword').value,
             registrationCost: parseFloat(document.getElementById('planRegistrationCost').value) || 0,
@@ -1428,7 +1576,8 @@ document.addEventListener('DOMContentLoaded', () => {
             const revenue = parseFloat(acc.revenue || 0);
             const refund = parseFloat(acc.refund || 0);
             const netRevenue = revenue - refund;
-            const isMonthly = acc.billingCycle === 'monthly';
+            const accCycle = acc.billingCycle || 'custom';
+            const isMonthly = accCycle === 'monthly';
             const lifecycleButtons = `
                 ${isMonthly ? `<button class="btn-icon text-success renew-monthly-acc-btn" data-id="${acc.id}" title="تجديد شهري"><i class="fa-solid fa-calendar-plus"></i></button>` : ''}
                 ${!isMonthly ? `<button class="btn-icon text-primary renew-acc-btn" data-id="${acc.id}" title="تجديد"><i class="fa-solid fa-rotate-right"></i></button>` : ''}
@@ -1449,7 +1598,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 <i class="fa-solid ${isPaid ? 'fa-circle-check text-success' : 'fa-circle-xmark text-danger'}"></i>
             </button>`;
 
-            const billingLabel = isMonthly ? '<div class="text-success" style="font-size:0.76rem">شهري</div>' : '';
+            const billingLabel = accCycle ? `<div class="account-billing-row">${getBillingCycleBadge(accCycle, 'account-billing-badge')}</div>` : '';
             const serviceLabel = plan
                 ? `<div>${escapeHtml(pName)}</div><div class="text-muted" style="font-size:0.78rem">${escapeHtml(plan.name || '')}</div>${billingLabel}`
                 : `<div>${escapeHtml(pName)}</div>${billingLabel}`;
@@ -2025,6 +2174,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const isChecked = selArr.includes(plan.id);
             const label = (plan.name || (platform ? platform.name : 'خطة'));
             const platName = platform ? platform.name : '';
+            const cycle = DataManager.normalizePlanBillingCycle(plan);
             html += `<label class="plan-checkbox-item${isChecked ? ' checked' : ''}">
                 <input type="checkbox" name="accPlanCb" value="${plan.id}" ${isChecked ? 'checked' : ''}>
                 <div class="plan-cb-icon" style="background:${platform ? platform.color + '25' : '#33333355'};color:${platform ? platform.color : '#fff'};">
@@ -2032,7 +2182,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 </div>
                 <div class="plan-cb-info">
                     <strong>${escapeHtml(label)}</strong>
-                    <small>${escapeHtml(platName)}</small>
+                    <small>${escapeHtml(platName)} · ${getBillingCycleLabel(cycle)}</small>
                 </div>
                 <span class="plan-cb-price">${Number(plan.pricePerMember || 0).toLocaleString('ar-EG')} ج.م</span>
             </label>`;
@@ -2077,6 +2227,40 @@ document.addEventListener('DOMContentLoaded', () => {
         return Array.from(checked).map(cb => cb.value);
     }
 
+    function applyPlanBillingToAccountForm(plan) {
+        if (!plan) return;
+        accountEndDateManuallyEdited = false;
+        const cycle = DataManager.normalizePlanBillingCycle(plan);
+        const startDate = document.getElementById('accStartDate').value || new Date().toISOString().split('T')[0];
+        const billingFields = buildBillingFields(startDate, plan.durationDays || 30, cycle);
+
+        const billingCycleSelect = document.getElementById('accBillingCycle');
+        if (billingCycleSelect) billingCycleSelect.value = billingFields.billingCycle;
+
+        setAccountEndDate(billingFields.currentPeriodEnd, false);
+    }
+
+    function applyPlanToAccountData(accountData, plan, fallbackPlatformId, fallbackRevenue) {
+        if (!plan) return accountData;
+        const cycle = DataManager.normalizePlanBillingCycle(plan);
+        const endDateOverride = accountEndDateManuallyEdited ? accountData.currentPeriodEnd : '';
+        const billingFields = buildBillingFields(accountData.startDate, plan.durationDays || accountData.durationDays, cycle, endDateOverride);
+
+        return {
+            ...accountData,
+            platformId: plan.platformId || fallbackPlatformId,
+            revenue: plan.pricePerMember || fallbackRevenue,
+            billingCycle: billingFields.billingCycle,
+            recurringEnabled: billingFields.recurringEnabled,
+            currentPeriodStart: billingFields.currentPeriodStart,
+            currentPeriodEnd: billingFields.currentPeriodEnd,
+            nextBillingDate: billingFields.nextBillingDate,
+            durationDays: billingFields.durationDays,
+            username: plan.email || accountData.username,
+            password: plan.password || accountData.password
+        };
+    }
+
     function handlePlanCheckboxChange() {
         const selectedIds = getSelectedPlanIds();
         const banner = document.getElementById('planInfoBanner');
@@ -2092,9 +2276,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Auto-fill platform
         if (plan.platformId) populatePlatformsDropdown(plan.platformId);
-        // Auto-fill duration
-        const durInput = document.getElementById('accDurationDays');
-        if (durInput && plan.durationDays) durInput.value = plan.durationDays;
+        // Auto-fill billing cycle and compatible duration from the account start date
+        applyPlanBillingToAccountForm(plan);
         // Auto-fill revenue (price per member)
         const revInput = document.getElementById('accRevenue');
         if (revInput && plan.pricePerMember) revInput.value = plan.pricePerMember;
@@ -2108,11 +2291,12 @@ document.addEventListener('DOMContentLoaded', () => {
         if (banner) {
             const platform = DataManager.getPlatformById(plan.platformId);
             if (selectedIds.length === 1) {
+                const cycle = DataManager.normalizePlanBillingCycle(plan);
                 banner.style.display = 'block';
                 banner.innerHTML = `
                     <i class="fa-solid fa-circle-info text-primary"></i>
                     <span>تم تعبئة البيانات من خطة: <strong>${escapeHtml(plan.name || (platform ? platform.name : 'الخطة'))}</strong>
-                    — يمكنك تعديل أي حقل.</span>
+                    — ${getBillingCycleLabel(cycle)} — يمكنك تعديل أي حقل.</span>
                 `;
             } else {
                 banner.style.display = 'block';
@@ -2165,6 +2349,8 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('accountModalTitle').innerText = 'إضافة اشتراك — ' + cust.name;
         document.getElementById('accStartDate').value = new Date().toISOString().split('T')[0];
         document.getElementById('accDurationDays').value = 30;
+        accountEndDateManuallyEdited = false;
+        syncAccountEndDateFromDuration(false);
         document.getElementById('accRevenue').value = 0;
         document.getElementById('accRefund').value = 0;
         const billingCycleSelect = document.getElementById('accBillingCycle');
@@ -2203,6 +2389,8 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('accountModalTitle').innerText = 'إضافة اشتراك جديد';
         document.getElementById('accStartDate').value = new Date().toISOString().split('T')[0];
         document.getElementById('accDurationDays').value = 30;
+        accountEndDateManuallyEdited = false;
+        syncAccountEndDateFromDuration(false);
         document.getElementById('accRevenue').value = 0;
         document.getElementById('accRefund').value = 0;
         const billingCycleSelect = document.getElementById('accBillingCycle');
@@ -2249,11 +2437,17 @@ document.addEventListener('DOMContentLoaded', () => {
         const customerId = document.getElementById('accCustomer').value;
         const platformId = document.getElementById('accPlatform').value;
         const startDate = document.getElementById('accStartDate').value;
+        const endDate = document.getElementById('accEndDate').value;
         const durationDays = document.getElementById('accDurationDays').value;
         const revenue = document.getElementById('accRevenue').value;
 
-        if (!customerId || !platformId || !startDate || !durationDays || revenue === '') {
+        if (!customerId || !platformId || !startDate || !endDate || !durationDays || revenue === '') {
             Swal.fire({ icon: 'error', title: 'بيانات ناقصة', text: 'يرجى إكمال الحقول الإلزامية المميزة بعلامة *', confirmButtonText: 'حسناً', background: '#111827', color: '#fff' });
+            return;
+        }
+
+        if (new Date(endDate) < new Date(startDate)) {
+            Swal.fire({ icon: 'error', title: 'تاريخ غير صحيح', text: 'تاريخ نهاية الاشتراك يجب أن يكون بعد تاريخ البداية أو مساويًا له.', confirmButtonText: 'حسناً', background: '#111827', color: '#fff' });
             return;
         }
 
@@ -2261,18 +2455,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const accId = document.getElementById('accId').value;
         const selectedPlanIds = getSelectedPlanIds();
         const billingCycle = document.getElementById('accBillingCycle') ? document.getElementById('accBillingCycle').value : 'custom';
-        const existingAccount = accId ? DataManager.getAccounts().find(a => a.id === accId) : null;
-        let billingFields = buildBillingFields(startDate, durationDays, billingCycle);
-        if (existingAccount && billingCycle === 'monthly' && existingAccount.billingCycle === 'monthly' && existingAccount.startDate === startDate) {
-            billingFields = {
-                billingCycle: 'monthly',
-                recurringEnabled: true,
-                currentPeriodStart: existingAccount.currentPeriodStart || startDate,
-                currentPeriodEnd: existingAccount.currentPeriodEnd || billingFields.currentPeriodEnd,
-                nextBillingDate: existingAccount.nextBillingDate || existingAccount.currentPeriodEnd || billingFields.nextBillingDate,
-                durationDays: existingAccount.durationDays || billingFields.durationDays
-            };
-        }
+        let billingFields = buildBillingFields(startDate, durationDays, billingCycle, endDate);
 
         const baseData = {
             customerId,
@@ -2305,21 +2488,18 @@ document.addEventListener('DOMContentLoaded', () => {
                 // Multi-plan: create one subscription per plan
                 for (const planId of selectedPlanIds) {
                     const plan = DataManager.getServicePlanById(planId);
-                    const accountData = { ...baseData };
-                        accountData.servicePlanId = planId;
-                        if (plan) {
-                            accountData.platformId = plan.platformId || platformId;
-                            if (accountData.billingCycle !== 'monthly') accountData.durationDays = plan.durationDays || durationDays;
-                            accountData.revenue = plan.pricePerMember || revenue;
-                            if (plan.email) accountData.username = plan.email;
-                            if (plan.password) accountData.password = plan.password;
-                        }
+                    let accountData = { ...baseData, servicePlanId: planId };
+                    accountData = applyPlanToAccountData(accountData, plan, platformId, revenue);
                     await DataManager.addAccount(accountData);
                 }
                 showToast(`تم إضافة ${selectedPlanIds.length} اشتراكات بنجاح`);
             } else {
                 // Single plan or no plan
                 baseData.servicePlanId = selectedPlanIds.length === 1 ? selectedPlanIds[0] : '';
+                if (baseData.servicePlanId) {
+                    const plan = DataManager.getServicePlanById(baseData.servicePlanId);
+                    Object.assign(baseData, applyPlanToAccountData(baseData, plan, platformId, revenue));
+                }
                 await DataManager.addAccount(baseData);
                 showToast('تم إضافة الاشتراك بنجاح');
             }
@@ -2362,13 +2542,20 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('accPassword').value = acc.password || '';
         document.getElementById('accStartDate').value = acc.startDate;
         document.getElementById('accDurationDays').value = acc.durationDays || 30;
+        const period = DataManager.getAccountPeriod(acc);
+        const endInput = document.getElementById('accEndDate');
+        if (endInput) endInput.value = period.endDate || addDaysToDate(acc.startDate, acc.durationDays || 30);
+        accountEndDateManuallyEdited = !!acc.currentPeriodEnd;
+        syncAccountDurationFromEndDate();
         document.getElementById('accRevenue').value = acc.revenue || 0;
         document.getElementById('accRefund').value = acc.refund || 0;
         document.getElementById('accActivationCode').value = acc.activationCode || '';
         document.getElementById('accNotes').value = acc.notes || '';
         document.getElementById('accountModalTitle').innerText = 'تعديل بيانات الاشتراك';
         const billingCycleSelect = document.getElementById('accBillingCycle');
-        if (billingCycleSelect) billingCycleSelect.value = acc.billingCycle || 'custom';
+        if (billingCycleSelect) {
+            billingCycleSelect.value = acc.billingCycle || 'custom';
+        }
 
         const isPaidCheck = document.getElementById('accIsPaid');
         if (isPaidCheck) isPaidCheck.checked = acc.isPaid === true;

@@ -288,6 +288,16 @@ class DataManager {
         return Math.max(1, Math.round((end - start) / (1000 * 60 * 60 * 24)));
     }
 
+    static getBillingCycleMonths(cycle) {
+        const cycles = { monthly: 1, quarterly: 3, semi_annual: 6, yearly: 12 };
+        return cycles[cycle] || null;
+    }
+
+    static normalizePlanBillingCycle(plan) {
+        const cycle = plan && plan.billingCycle ? plan.billingCycle : 'custom_days';
+        return cycle === 'custom' ? 'custom_days' : cycle;
+    }
+
     static getAccountPeriod(account) {
         const startDate = account.currentPeriodStart || account.startDate;
         let endDate = account.currentPeriodEnd || '';
@@ -368,11 +378,18 @@ class DataManager {
 
         const startDate = options.startDate || new Date().toISOString().split('T')[0];
         const durationDays = options.durationDays || acc.durationDays || 30;
+        const calculatedEnd = new Date(startDate);
+        calculatedEnd.setDate(calculatedEnd.getDate() + parseInt(durationDays || 30, 10));
+        const currentPeriodEnd = options.endDate || this.formatDate(calculatedEnd);
+        const isRecurringCycle = !!this.getBillingCycleMonths(acc.billingCycle);
         const patch = {
             previousStartDate: acc.startDate || null,
             previousDurationDays: acc.durationDays || null,
             startDate,
             durationDays,
+            currentPeriodStart: startDate,
+            currentPeriodEnd,
+            nextBillingDate: isRecurringCycle ? currentPeriodEnd : '',
             lifecycleStatus: 'active',
             closedAt: null,
             closedReason: null,
