@@ -9,6 +9,7 @@ const RENEWALS_KEY = STORAGE_PREFIX + 'renewals';
 const PLAN_EXPENSES_KEY = STORAGE_PREFIX + 'plan_expenses';
 const JOB_TITLES_KEY = STORAGE_PREFIX + 'job_titles';
 const WORKPLACES_KEY = STORAGE_PREFIX + 'workplaces';
+const FOLLOW_UP_WARNING_DAYS = 14;
 
 // Default Platforms
 const defaultPlatforms = [
@@ -412,6 +413,18 @@ class DataManager {
         return date.toISOString().split('T')[0];
     }
 
+    static parseDateOnly(dateString) {
+        if (!dateString) return null;
+        const date = new Date(dateString);
+        if (Number.isNaN(date.getTime())) return null;
+        return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+    }
+
+    static todayDateOnly() {
+        const now = new Date();
+        return new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    }
+
     static addCalendarMonths(dateString, months = 1) {
         const start = new Date(dateString);
         const day = start.getDate();
@@ -794,11 +807,14 @@ class DataManager {
             return { status: 'cancelled', label: 'ملغي', daysLeft: null };
         }
         const period = this.getAccountPeriod(account);
-        const endDate = new Date(period.endDate);
-        const now = new Date();
-        const daysLeft = Math.ceil((endDate - now) / (1000 * 60 * 60 * 24));
-        if (daysLeft < 0) return { status: 'expired', label: 'منتهي', daysLeft: 0 };
-        if (daysLeft <= 3) return { status: 'warning', label: 'قارب على الانتهاء', daysLeft };
+        const endDate = this.parseDateOnly(period.endDate);
+        if (!endDate) {
+            return { status: 'needs_review', label: 'يحتاج مراجعة', daysLeft: null };
+        }
+        const today = this.todayDateOnly();
+        const daysLeft = Math.round((endDate - today) / (1000 * 60 * 60 * 24));
+        if (daysLeft < 0) return { status: 'expired', label: 'منتهي', daysLeft };
+        if (daysLeft <= FOLLOW_UP_WARNING_DAYS) return { status: 'warning', label: 'قارب على الانتهاء', daysLeft };
         return { status: 'active', label: 'نشط', daysLeft };
     }
 

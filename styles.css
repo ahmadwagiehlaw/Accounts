@@ -1473,6 +1473,12 @@ h6 {
     border: 1px solid rgba(245, 158, 11, 0.3);
 }
 
+.status-needs_review {
+    background: rgba(59, 130, 246, 0.15);
+    color: #93c5fd;
+    border: 1px solid rgba(59, 130, 246, 0.3);
+}
+
 .status-closed {
     background: rgba(148, 163, 184, 0.15);
     color: #cbd5e1;

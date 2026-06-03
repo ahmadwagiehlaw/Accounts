@@ -68,12 +68,14 @@ document.addEventListener('DOMContentLoaded', () => {
         });
         const expired = actionableAccounts.filter(acc => DataManager.getAccountStatus(acc).status === 'expired');
         const warning = actionableAccounts.filter(acc => DataManager.getAccountStatus(acc).status === 'warning');
+        const needsReview = actionableAccounts.filter(acc => DataManager.getAccountStatus(acc).status === 'needs_review');
         const unpaid = actionableAccounts.filter(acc => acc.isPaid !== true);
-        const uniqueIds = new Set([...expired, ...warning, ...unpaid].map(acc => acc.id));
+        const uniqueIds = new Set([...expired, ...warning, ...needsReview, ...unpaid].map(acc => acc.id));
         return {
-            urgent: expired,
+            urgent: [...expired, ...needsReview],
             expired,
             warning,
+            needsReview,
             unpaid,
             total: uniqueIds.size
         };
@@ -1073,9 +1075,10 @@ document.addEventListener('DOMContentLoaded', () => {
         const groups = buildFollowUpNotificationGroups(accounts);
         const warningAccounts = groups.warning;
         const expiredAccounts = groups.expired;
+        const reviewAccounts = groups.needsReview || [];
         const unpaidAccounts = groups.unpaid;
         const seen = new Set();
-        const previewItems = [...expiredAccounts, ...warningAccounts, ...unpaidAccounts]
+        const previewItems = [...expiredAccounts, ...reviewAccounts, ...warningAccounts, ...unpaidAccounts]
             .filter(acc => {
                 if (seen.has(acc.id)) return false;
                 seen.add(acc.id);
@@ -1084,7 +1087,7 @@ document.addEventListener('DOMContentLoaded', () => {
             .slice(0, 3);
 
         document.getElementById('followup-warning-count').textContent = warningAccounts.length;
-        document.getElementById('followup-expired-count').textContent = expiredAccounts.length;
+        document.getElementById('followup-expired-count').textContent = expiredAccounts.length + reviewAccounts.length;
         document.getElementById('followup-unpaid-count').textContent = unpaidAccounts.length;
 
         center.classList.toggle('is-empty', previewItems.length === 0);
@@ -1120,8 +1123,8 @@ document.addEventListener('DOMContentLoaded', () => {
             const canMarkPaid = !isPaid;
             const canInvoice = acc.revenue !== undefined && acc.revenue !== null && acc.revenue !== '' && !Number.isNaN(Number(acc.revenue));
             const isMonthly = acc.billingCycle === 'monthly';
-            const overlapBadge = groupType === 'unpaid' && (statusInfo.status === 'expired' || statusInfo.status === 'warning')
-                ? `<span class="followup-overlap-badge status-${statusInfo.status}">${statusInfo.status === 'expired' ? 'منتهي' : 'قارب على الانتهاء'}</span>`
+            const overlapBadge = groupType === 'unpaid' && (statusInfo.status === 'expired' || statusInfo.status === 'warning' || statusInfo.status === 'needs_review')
+                ? `<span class="followup-overlap-badge status-${statusInfo.status}">${statusInfo.status === 'expired' ? 'منتهي' : statusInfo.status === 'needs_review' ? 'يحتاج مراجعة' : 'قارب على الانتهاء'}</span>`
                 : '';
 
             return `<div class="followup-item">
@@ -1150,16 +1153,19 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function getFollowUpTimingText(acc, statusInfo) {
+        if (statusInfo.status === 'needs_review') {
+            return 'تاريخ النهاية غير واضح';
+        }
         if (statusInfo.status === 'expired') {
-            const period = DataManager.getAccountPeriod(acc);
-            const endDate = new Date(period.endDate);
-            const expiredDays = Math.floor((new Date() - endDate) / (1000 * 60 * 60 * 24));
+            const expiredDays = Math.abs(statusInfo.daysLeft || 0);
             if (expiredDays < 1) return 'منتهي اليوم';
             return `منتهي منذ ${expiredDays} يوم`;
         }
         if (statusInfo.status === 'warning') {
+            if (statusInfo.daysLeft === 0) return 'ينتهي اليوم';
             return `متبقي ${statusInfo.daysLeft} يوم`;
         }
+        if (statusInfo.daysLeft === null || statusInfo.daysLeft === undefined) return statusInfo.label;
         return `متبقي ${statusInfo.daysLeft} يوم`;
     }
 
@@ -2074,13 +2080,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 cancelled: acc.cancelledAt
             };
             const isNonTemporalStatus = ['closed', 'paused', 'cancelled'].includes(statusInfo.status);
+            const accountTimingText = getFollowUpTimingText(acc, statusInfo);
             const dateDurationHtml = isNonTemporalStatus
                 ? `<div>${acc.startDate || '-'}</div><div class="text-muted" style="font-size:0.82rem;font-weight:700;">${statusInfo.label}${lifecycleDateMap[statusInfo.status] ? ' - ' + new Date(lifecycleDateMap[statusInfo.status]).toLocaleDateString('ar-EG') : ''}</div>`
                 : `<div>${acc.startDate || '-'}</div>
                     <div class="text-primary" style="font-size:0.82rem;font-weight:700;">
                         ${acc.durationDays} يوم إجمالي
-                        <div class="${statusInfo.daysLeft <= 7 ? 'text-danger' : 'text-warning'}" style="font-size:0.9rem; margin-top:2px;">
-                            (متبقي ${statusInfo.daysLeft} يوم)
+                        <div class="${['expired', 'needs_review'].includes(statusInfo.status) || (statusInfo.daysLeft !== null && statusInfo.daysLeft <= 7) ? 'text-danger' : 'text-warning'}" style="font-size:0.9rem; margin-top:2px;">
+                            (${accountTimingText})
                         </div>
                     </div>`;
 
