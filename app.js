@@ -287,6 +287,8 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    enhanceSettingsModal();
+
     if (toggleFinancials) {
         toggleFinancials.addEventListener('change', (e) => {
             localStorage.setItem('submaster_show_financials', e.target.checked);
@@ -308,6 +310,91 @@ document.addEventListener('DOMContentLoaded', () => {
             localStorage.setItem('submaster_compact_mode', e.target.checked);
             if (e.target.checked) document.body.classList.add('compact-mode');
             else document.body.classList.remove('compact-mode');
+        });
+    }
+
+    function enhanceSettingsModal() {
+        const modal = document.getElementById('settingsModal');
+        if (!modal || modal.dataset.enhanced === 'true') return;
+
+        const content = modal.querySelector('.modal-content');
+        const title = modal.querySelector('.modal-header h3');
+        const body = modal.querySelector('.modal-body');
+        const settingsList = modal.querySelector('.settings-list');
+        const repairBtn = document.getElementById('btnRepairAccountPlatforms');
+        if (!content || !body || !settingsList || !repairBtn) return;
+
+        modal.dataset.enhanced = 'true';
+        content.classList.add('settings-modal-content');
+        body.classList.add('settings-modal-body');
+        if (title) title.textContent = 'الإعدادات وأدوات الإدارة';
+
+        const oldDivider = repairBtn.previousElementSibling;
+        if (oldDivider && oldDivider.tagName === 'HR') oldDivider.remove();
+
+        const tabs = document.createElement('div');
+        tabs.className = 'settings-tabs';
+        tabs.innerHTML = `
+            <button class="settings-tab active" type="button" data-settings-tab="display">
+                <i class="fa-solid fa-sliders"></i><span>العرض</span>
+            </button>
+            <button class="settings-tab" type="button" data-settings-tab="alerts">
+                <i class="fa-solid fa-bell"></i><span>المتابعة</span>
+            </button>
+            <button class="settings-tab" type="button" data-settings-tab="tools">
+                <i class="fa-solid fa-screwdriver-wrench"></i><span>الأدوات</span>
+            </button>`;
+
+        const displayPanel = document.createElement('div');
+        displayPanel.className = 'settings-panel active';
+        displayPanel.dataset.settingsPanel = 'display';
+        settingsList.classList.add('compact-settings-list');
+        displayPanel.appendChild(settingsList);
+
+        const alertsPanel = document.createElement('div');
+        alertsPanel.className = 'settings-panel';
+        alertsPanel.dataset.settingsPanel = 'alerts';
+        alertsPanel.innerHTML = `
+            <div class="settings-note">
+                <i class="fa-solid fa-circle-info text-info"></i>
+                <div>
+                    <strong>مركز المتابعة الحالي</strong>
+                    <span>يعرض الاشتراكات المنتهية، القريبة من الانتهاء، غير المسددة، والحالات التي تحتاج مراجعة.</span>
+                </div>
+            </div>
+            <div class="settings-note">
+                <i class="fa-solid fa-calendar-days text-warning"></i>
+                <div>
+                    <strong>نافذة قرب الانتهاء</strong>
+                    <span>الحد الحالي مضبوط على 14 يوم ويستخدم في التنبيهات ومركز المتابعة.</span>
+                </div>
+            </div>`;
+
+        const toolsPanel = document.createElement('div');
+        toolsPanel.className = 'settings-panel';
+        toolsPanel.dataset.settingsPanel = 'tools';
+        const toolbox = document.createElement('div');
+        toolbox.className = 'settings-toolbox';
+        repairBtn.classList.add('settings-wide-action');
+        repairBtn.removeAttribute('style');
+        toolbox.appendChild(repairBtn);
+        toolbox.insertAdjacentHTML('beforeend', '<p class="settings-helper-text">هذه الأداة تصلح ربط الاشتراكات بالخدمة الموجودة في الخطة فقط، ولا تدمج أو تحذف أي خدمة.</p>');
+        toolsPanel.appendChild(toolbox);
+
+        body.innerHTML = '';
+        body.appendChild(tabs);
+        body.appendChild(displayPanel);
+        body.appendChild(alertsPanel);
+        body.appendChild(toolsPanel);
+
+        tabs.addEventListener('click', (e) => {
+            const tab = e.target.closest('[data-settings-tab]');
+            if (!tab) return;
+            const target = tab.dataset.settingsTab;
+            tabs.querySelectorAll('.settings-tab').forEach(btn => btn.classList.toggle('active', btn === tab));
+            body.querySelectorAll('[data-settings-panel]').forEach(panel => {
+                panel.classList.toggle('active', panel.dataset.settingsPanel === target);
+            });
         });
     }
 
@@ -398,8 +485,18 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
-    function openModal(id) { document.getElementById(id).classList.add('show'); }
+    function openModal(id) {
+        const modal = document.getElementById(id);
+        if (!modal) return;
+        modal.classList.add('show');
+        resetModalFormTabs(modal);
+    }
     function closeModal(id) { document.getElementById(id).classList.remove('show'); }
+
+    function resetModalFormTabs(modal) {
+        const firstTab = modal.querySelector('.modal-form-tab');
+        if (firstTab) setActiveFormTab(firstTab.closest('form'), firstTab.dataset.formTab);
+    }
 
     // ============================================================
     //  NOTIFICATIONS & PWA INSTALLATION
@@ -1252,6 +1349,157 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     compactAccountPaymentFields();
+    enhanceWorkflowModals();
+
+    function enhanceWorkflowModals() {
+        enhanceTabbedForm('accountModal', [
+            {
+                key: 'plan',
+                label: 'الخطة',
+                icon: 'fa-solid fa-box-open',
+                selectors: ['#accCustomerBanner', '#accPlansCheckboxes', '#planInfoBanner']
+            },
+            {
+                key: 'customer',
+                label: 'المشترك',
+                icon: 'fa-solid fa-user-check',
+                selectors: ['#accCustomer', '#accPlatform']
+            },
+            {
+                key: 'billing',
+                label: 'الفوترة',
+                icon: 'fa-solid fa-coins',
+                selectors: ['#accRevenue', '#accBillingCycle']
+            },
+            {
+                key: 'dates',
+                label: 'الفترة',
+                icon: 'fa-solid fa-calendar-days',
+                selectors: ['#accStartDate', '#accEndDate', '#accDurationDays', '#accRefund']
+            },
+            {
+                key: 'login',
+                label: 'الدخول',
+                icon: 'fa-solid fa-key',
+                selectors: ['#accUsername', '#accPassword', '#accActivationCode', '#accNotes']
+            }
+        ]);
+
+        enhanceTabbedForm('planModal', [
+            {
+                key: 'basic',
+                label: 'الخطة',
+                icon: 'fa-solid fa-layer-group',
+                selectors: ['#planPlatform', '#planName']
+            },
+            {
+                key: 'pricing',
+                label: 'التسعير',
+                icon: 'fa-solid fa-coins',
+                selectors: ['#planPricePerMember', '#planRegistrationCost', '#planBillingCycle', '#planDurationDays']
+            },
+            {
+                key: 'account',
+                label: 'الحساب',
+                icon: 'fa-solid fa-key',
+                selectors: ['#planEmail', '#planPassword', '#planNotes', '#planStartDate']
+            }
+        ]);
+
+        enhanceTabbedForm('platformModal', [
+            {
+                key: 'basic',
+                label: 'الخدمة',
+                icon: 'fa-solid fa-star',
+                selectors: ['#platName']
+            },
+            {
+                key: 'style',
+                label: 'الشكل',
+                icon: 'fa-solid fa-palette',
+                selectors: ['#platIcon', '#platColor', '#platformPreview']
+            }
+        ]);
+    }
+
+    function enhanceTabbedForm(modalId, tabConfigs) {
+        const modal = document.getElementById(modalId);
+        const form = modal?.querySelector('form');
+        if (!modal || !form || form.dataset.tabbed === 'true') return;
+
+        form.dataset.tabbed = 'true';
+        modal.querySelector('.modal-content')?.classList.add('workflow-modal-content');
+        form.classList.add('modal-tabbed-form');
+
+        const tabs = document.createElement('div');
+        tabs.className = 'modal-form-tabs';
+
+        const panels = document.createElement('div');
+        panels.className = 'modal-form-panels';
+
+        const hiddenFields = Array.from(form.children).filter(node => node.matches?.('input[type="hidden"]'));
+        hiddenFields.forEach(node => form.appendChild(node));
+
+        tabConfigs.forEach((config, index) => {
+            const tab = document.createElement('button');
+            tab.type = 'button';
+            tab.className = `modal-form-tab${index === 0 ? ' active' : ''}`;
+            tab.dataset.formTab = config.key;
+            tab.innerHTML = `<i class="${config.icon}"></i><span>${config.label}</span>`;
+            tabs.appendChild(tab);
+
+            const panel = document.createElement('div');
+            panel.className = `modal-form-panel${index === 0 ? ' active' : ''}`;
+            panel.dataset.formPanel = config.key;
+            panel.appendChild(buildPanelGrid(config.selectors));
+            panels.appendChild(panel);
+        });
+
+        const firstVisible = Array.from(form.children).find(node => !node.matches?.('input[type="hidden"]'));
+        form.insertBefore(tabs, firstVisible || null);
+        form.insertBefore(panels, tabs.nextSibling);
+
+        form.querySelectorAll('.form-section-title').forEach(title => {
+            if (!title.closest('.modal-form-panel')) title.remove();
+        });
+        form.querySelectorAll('.form-collapsible').forEach(details => {
+            if (!details.querySelector('input, select, textarea, button')) details.remove();
+        });
+
+        tabs.addEventListener('click', (e) => {
+            const tab = e.target.closest('[data-form-tab]');
+            if (!tab) return;
+            setActiveFormTab(form, tab.dataset.formTab);
+        });
+    }
+
+    function buildPanelGrid(selectors) {
+        const grid = document.createElement('div');
+        grid.className = 'grid-form modal-form-panel-grid';
+        selectors.forEach(selector => {
+            const node = document.querySelector(selector);
+            const group = getMovableFormBlock(node);
+            if (group && !grid.contains(group)) grid.appendChild(group);
+        });
+        return grid;
+    }
+
+    function getMovableFormBlock(node) {
+        if (!node) return null;
+        if (node.classList?.contains('plan-info-banner')) return node;
+        if (node.classList?.contains('platform-preview')) return node.closest('.form-group') || node;
+        return node.closest('.form-group') || node;
+    }
+
+    function setActiveFormTab(form, key) {
+        if (!form || !key) return;
+        form.querySelectorAll('.modal-form-tab').forEach(tab => {
+            tab.classList.toggle('active', tab.dataset.formTab === key);
+        });
+        form.querySelectorAll('.modal-form-panel').forEach(panel => {
+            panel.classList.toggle('active', panel.dataset.formPanel === key);
+        });
+    }
 
     function refreshAccountEndDateFromSelectedPlan() {
         if (accountEndDateManuallyEdited) {
@@ -2571,7 +2819,59 @@ document.addEventListener('DOMContentLoaded', () => {
     // ============================================================
     //  PLATFORMS
     // ============================================================
+    function enhancePlatformsPage() {
+        const section = document.getElementById('view-platforms');
+        const grid = document.getElementById('platformsGrid');
+        if (!section || !grid || section.dataset.enhanced === 'true') return;
+
+        section.dataset.enhanced = 'true';
+        const newPlatformBtn = document.getElementById('btnNewPlatform');
+
+        const tabs = document.createElement('div');
+        tabs.className = 'subtabs platforms-subtabs';
+        tabs.innerHTML = `
+            <button class="subtab active" type="button" data-platform-tab="services">
+                <i class="fa-solid fa-layer-group"></i><span>الخدمات</span>
+            </button>
+            <button class="subtab" type="button" data-platform-tab="jobs">
+                <i class="fa-solid fa-briefcase"></i><span>الوظائف</span>
+            </button>
+            <button class="subtab" type="button" data-platform-tab="workplaces">
+                <i class="fa-solid fa-building"></i><span>جهات العمل</span>
+            </button>`;
+
+        const servicesPanel = document.createElement('div');
+        servicesPanel.className = 'platform-tab-panel active';
+        servicesPanel.dataset.platformPanel = 'services';
+        grid.parentNode.insertBefore(tabs, grid);
+        grid.parentNode.insertBefore(servicesPanel, grid);
+        servicesPanel.appendChild(grid);
+
+        const jobPanel = document.getElementById('jobTitlesList')?.closest('.lookup-section');
+        const workplacePanel = document.getElementById('workplacesList')?.closest('.lookup-section');
+        if (jobPanel) {
+            jobPanel.classList.add('platform-tab-panel');
+            jobPanel.dataset.platformPanel = 'jobs';
+        }
+        if (workplacePanel) {
+            workplacePanel.classList.add('platform-tab-panel');
+            workplacePanel.dataset.platformPanel = 'workplaces';
+        }
+
+        tabs.addEventListener('click', (e) => {
+            const tab = e.target.closest('[data-platform-tab]');
+            if (!tab) return;
+            const target = tab.dataset.platformTab;
+            tabs.querySelectorAll('.subtab').forEach(btn => btn.classList.toggle('active', btn === tab));
+            section.querySelectorAll('[data-platform-panel]').forEach(panel => {
+                panel.classList.toggle('active', panel.dataset.platformPanel === target);
+            });
+            if (newPlatformBtn) newPlatformBtn.style.display = target === 'services' ? '' : 'none';
+        });
+    }
+
     function renderPlatforms() {
+        enhancePlatformsPage();
         const grid = document.getElementById('platformsGrid');
         const platforms = DataManager.getPlatforms();
         grid.innerHTML = '';
