@@ -2230,6 +2230,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         closeModal('planModal');
         renderPlans();
+        if (document.getElementById('view-accounts')?.classList.contains('active')) renderAccounts();
     });
 
     function deletePlan(id) {
@@ -2251,6 +2252,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (result.isConfirmed) {
                 await DataManager.deleteServicePlan(id);
                 renderPlans();
+                if (document.getElementById('view-accounts')?.classList.contains('active')) renderAccounts();
                 showToast('تم حذف الخطة');
             }
         });
@@ -2263,6 +2265,100 @@ document.addEventListener('DOMContentLoaded', () => {
     filterStatus.addEventListener('change', renderAccounts);
     const filterPayment = document.getElementById('filterPayment');
     if (filterPayment) { filterPayment.addEventListener('change', renderAccounts); }
+    const filterPlan = ensureAccountsPlanFilter();
+    if (filterPlan) { filterPlan.addEventListener('change', renderAccounts); }
+
+    function ensureAccountsPlanFilter() {
+        const existing = document.getElementById('filterPlan');
+        if (existing) return existing;
+        const filterBox = document.querySelector('#view-accounts .filter-box');
+        if (!filterBox) return null;
+        const select = document.createElement('select');
+        select.id = 'filterPlan';
+        select.className = 'form-control';
+        select.style.minWidth = '160px';
+        filterBox.appendChild(select);
+        return select;
+    }
+
+    function ensureAccountsPlanSummary() {
+        const existing = document.getElementById('accountsPlanSummary');
+        if (existing) return existing;
+        const tableHeader = document.querySelector('#view-accounts .table-header');
+        if (!tableHeader) return null;
+        const summary = document.createElement('div');
+        summary.id = 'accountsPlanSummary';
+        summary.className = 'accounts-plan-summary';
+        tableHeader.insertAdjacentElement('afterend', summary);
+        return summary;
+    }
+
+    function populateAccountsPlanFilter(selectedValue = 'all') {
+        const select = document.getElementById('filterPlan');
+        if (!select) return;
+        const plans = DataManager.getServicePlans()
+            .slice()
+            .sort((a, b) => (a.name || '').localeCompare(b.name || '', 'ar'));
+        const validValues = new Set(['all', 'none', ...plans.map(plan => plan.id)]);
+        const nextValue = validValues.has(selectedValue) ? selectedValue : 'all';
+        select.innerHTML = `
+            <option value="all">كل الخطط</option>
+            <option value="none">بدون خطة</option>
+            ${plans.map(plan => `<option value="${escapeAttr(plan.id)}">${escapeHtml(plan.name || 'خطة بدون اسم')}</option>`).join('')}
+        `;
+        select.value = nextValue;
+    }
+
+    function renderAccountsPlanSummary(planFilterVal, visibleAccounts) {
+        const summary = ensureAccountsPlanSummary();
+        if (!summary) return;
+        if (!planFilterVal || planFilterVal === 'all') {
+            summary.style.display = 'none';
+            summary.innerHTML = '';
+            return;
+        }
+
+        const selectedPlan = planFilterVal === 'none' ? null : DataManager.getServicePlanById(planFilterVal);
+        const summaryTitle = selectedPlan ? selectedPlan.name || 'خطة بدون اسم' : 'اشتراكات بدون خطة';
+        const uniqueCustomers = new Set(visibleAccounts.map(acc => acc.customerId || acc.customerName || acc.id));
+        const totals = visibleAccounts.reduce((accum, account) => {
+            const financials = DataManager.getAccountFinancials(account);
+            accum.billed += financials.billedAmount || 0;
+            accum.paid += financials.paidAmount || 0;
+            accum.unpaid += financials.unpaidAmount || 0;
+            return accum;
+        }, { billed: 0, paid: 0, unpaid: 0 });
+
+        summary.style.display = '';
+        summary.innerHTML = `
+            <div class="accounts-plan-summary-title">
+                <i class="fa-solid fa-chart-simple text-primary"></i>
+                <span>${escapeHtml(summaryTitle)}</span>
+            </div>
+            <div class="accounts-plan-summary-grid">
+                <div class="accounts-plan-summary-card">
+                    <small>الاشتراكات الظاهرة</small>
+                    <strong>${visibleAccounts.length.toLocaleString('ar-EG')}</strong>
+                </div>
+                <div class="accounts-plan-summary-card">
+                    <small>الأعضاء</small>
+                    <strong>${uniqueCustomers.size.toLocaleString('ar-EG')}</strong>
+                </div>
+                <div class="accounts-plan-summary-card">
+                    <small>إجمالي المستحق</small>
+                    <strong>${Number(totals.billed).toLocaleString('ar-EG')} ج.م</strong>
+                </div>
+                <div class="accounts-plan-summary-card success">
+                    <small>إجمالي المدفوع</small>
+                    <strong>${Number(totals.paid).toLocaleString('ar-EG')} ج.م</strong>
+                </div>
+                <div class="accounts-plan-summary-card danger">
+                    <small>غير المسدد</small>
+                    <strong>${Number(totals.unpaid).toLocaleString('ar-EG')} ج.م</strong>
+                </div>
+            </div>
+        `;
+    }
 
     function renderAccounts() {
         const tableBody = document.querySelector('#accountsTable tbody');
@@ -2270,7 +2366,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const searchTerm = searchAccounts.value.toLowerCase();
         const statusFilterVal = filterStatus.value;
         const paymentFilterVal = filterPayment ? filterPayment.value : 'all';
+        const planFilterVal = filterPlan ? filterPlan.value : 'all';
         const accounts = DataManager.getAccounts();
+        populateAccountsPlanFilter(planFilterVal);
 
         tableBody.innerHTML = '';
 
@@ -2281,6 +2379,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         let visibleCount = 0;
+        const visibleAccounts = [];
 
         accounts.forEach(acc => {
             const platform = DataManager.getPlatformById(acc.platformId);
@@ -2290,22 +2389,32 @@ document.addEventListener('DOMContentLoaded', () => {
             const custPhone = cust ? cust.phone : (acc.customerPhone || '');
             const statusInfo = DataManager.getAccountStatus(acc);
             const plan = acc.servicePlanId ? DataManager.getServicePlanById(acc.servicePlanId) : null;
+            const planName = plan ? (plan.name || '') : '';
+            const planPlatform = plan?.platformId ? DataManager.getPlatformById(plan.platformId) : null;
+            const planPlatformName = planPlatform ? (planPlatform.name || '') : '';
 
             const matchesSearch =
                 custName.toLowerCase().includes(searchTerm) ||
                 (custPhone || '').toLowerCase().includes(searchTerm) ||
                 pName.toLowerCase().includes(searchTerm) ||
+                planName.toLowerCase().includes(searchTerm) ||
+                planPlatformName.toLowerCase().includes(searchTerm) ||
                 (acc.username || '').toLowerCase().includes(searchTerm);
 
             const matchesStatus = statusFilterVal === 'all' || statusInfo.status === statusFilterVal;
+            const matchesPlan =
+                planFilterVal === 'all' ||
+                (planFilterVal === 'none' && !acc.servicePlanId) ||
+                acc.servicePlanId === planFilterVal;
 
             const isPaid = acc.isPaid === true;
             let matchesPayment = true;
             if (paymentFilterVal === 'paid') matchesPayment = isPaid;
             if (paymentFilterVal === 'unpaid') matchesPayment = !isPaid;
 
-            if (!matchesSearch || !matchesStatus || !matchesPayment) return;
+            if (!matchesSearch || !matchesStatus || !matchesPayment || !matchesPlan) return;
             visibleCount++;
+            visibleAccounts.push(acc);
 
             const revenue = parseFloat(acc.revenue || 0);
             const refund = parseFloat(acc.refund || 0);
@@ -2434,6 +2543,7 @@ document.addEventListener('DOMContentLoaded', () => {
             emptyState.style.display = 'none';
             document.querySelector('#accountsTable').style.display = 'table';
         }
+        renderAccountsPlanSummary(planFilterVal, visibleAccounts);
     }
 
     function openWhatsAppAccount(id) {

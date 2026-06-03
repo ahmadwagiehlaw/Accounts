@@ -1401,6 +1401,56 @@ h6 {
     min-width: 160px;
 }
 
+.accounts-plan-summary {
+    margin: 0 0 1rem;
+    padding: 0.75rem;
+    border: 1px solid var(--border-glass);
+    border-radius: var(--radius-lg);
+    background: rgba(99, 102, 241, 0.08);
+}
+
+.accounts-plan-summary-title {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    color: var(--text-primary);
+    font-weight: 800;
+    margin-bottom: 0.65rem;
+}
+
+.accounts-plan-summary-grid {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 0.55rem;
+}
+
+.accounts-plan-summary-card {
+    padding: 0.65rem;
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: var(--radius-md);
+    background: rgba(0, 0, 0, 0.16);
+}
+
+.accounts-plan-summary-card small {
+    display: block;
+    color: var(--text-muted);
+    font-size: 0.76rem;
+    margin-bottom: 0.2rem;
+}
+
+.accounts-plan-summary-card strong {
+    color: var(--text-primary);
+    font-size: 0.95rem;
+}
+
+.accounts-plan-summary-card.success strong {
+    color: var(--success-color);
+}
+
+.accounts-plan-summary-card.danger strong {
+    color: var(--danger-color);
+}
+
 .table-responsive {
     overflow-x: auto;
 }
@@ -2185,6 +2235,10 @@ textarea.form-control {
         align-items: stretch;
     }
 
+    .accounts-plan-summary-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
     .stats-grid {
         grid-template-columns: 1fr 1fr;
     }
@@ -2814,6 +2868,10 @@ body.hide-financials .stat-value {
 
 body.hide-financials .money-badge {
     display: none !important;
+}
+
+body.hide-financials .accounts-plan-summary-card:nth-child(n+3) {
+    display: none;
 }
 
 /* Lookup Sections */
