@@ -249,7 +249,7 @@ document.addEventListener('DOMContentLoaded', () => {
         document.body.classList.add('compact-mode');
     }
 
-    const btnCleanupDB = document.getElementById('btnCleanupDB');
+    const btnRepairAccountPlatforms = document.getElementById('btnRepairAccountPlatforms');
 
     if (btnDisplaySettings) {
         btnDisplaySettings.addEventListener('click', () => {
@@ -257,18 +257,30 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    if (btnCleanupDB) {
-        btnCleanupDB.addEventListener('click', async () => {
+    if (btnRepairAccountPlatforms) {
+        btnRepairAccountPlatforms.innerHTML = '<i class="fa-solid fa-screwdriver-wrench"></i> إصلاح أسماء الخدمات في الاشتراكات';
+        btnRepairAccountPlatforms.addEventListener('click', async () => {
             const res = await Swal.fire({
-                title: 'تأكيد التنظيف',
-                text: 'هل أنت متأكد من رغبتك في دمج وحذف الخدمات المكررة؟',
+                title: 'إصلاح أسماء الخدمات؟',
+                text: 'سيتم فقط تحديث الاشتراكات المرتبطة بخطة لتستخدم نفس خدمة الخطة. لن يتم دمج أو حذف أي خدمة.',
                 icon: 'warning',
                 showCancelButton: true,
-                confirmButtonText: 'نعم، نظف الآن',
+                confirmButtonText: 'إصلاح الآن',
                 cancelButtonText: 'إلغاء'
             });
             if (res.isConfirmed) {
-                await DataManager.cleanupDatabase();
+                const count = await DataManager.repairAccountPlatformsFromPlans();
+                renderAccounts();
+                renderPlans();
+                renderDashboard();
+                checkNotifications();
+                Swal.fire({
+                    icon: 'success',
+                    title: 'تم الإصلاح',
+                    text: count > 0 ? `تم تحديث ${count} اشتراك.` : 'لا توجد اشتراكات تحتاج إلى إصلاح.',
+                    background: '#111827',
+                    color: '#fff'
+                });
             }
         });
     }
@@ -666,9 +678,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const accounts = DataManager.getAccounts();
         const fmt = (num) => Number(num).toLocaleString('ar-EG');
 
-        document.getElementById('stat-revenue').innerHTML = fmt(stats.totalRevenue) + ' <span>ج.م</span>';
+        document.getElementById('stat-revenue').innerHTML = fmt(stats.totalPaid !== undefined ? stats.totalPaid : stats.totalRevenue) + ' <span>ج.م</span>';
         document.getElementById('stat-cost').innerHTML = fmt(stats.totalCost) + ' <span>ج.م</span>';
-        document.getElementById('stat-profit').innerHTML = fmt(stats.netProfit) + ' <span>ج.م</span>';
+        document.getElementById('stat-profit').innerHTML = fmt(stats.netCollected !== undefined ? stats.netCollected : stats.netProfit) + ' <span>ج.م</span>';
         document.getElementById('stat-refunds').innerHTML = fmt(stats.totalRefunds) + ' <span>ج.م</span>';
 
         let activeCount = 0, warningCount = 0, expiredCount = 0;
@@ -803,6 +815,254 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (chartTitle) chartTitle.innerHTML = '<i class="fa-solid fa-chart-area"></i> ملخص الإيرادات';
             });
         }
+    }
+
+    function buildFinancialLedgerRows() {
+        const rows = [];
+        DataManager.getAccounts().forEach(acc => {
+            const customer = DataManager.getCustomerById(acc.customerId);
+            const platform = DataManager.getPlatformById(acc.platformId);
+            const plan = acc.servicePlanId ? DataManager.getServicePlanById(acc.servicePlanId) : null;
+            const entries = DataManager.getAccountBillingEntries ? DataManager.getAccountBillingEntries(acc) : [];
+
+            entries.forEach(entry => {
+                rows.push({
+                    date: entry.periodStart || entry.createdAt || '',
+                    type: entry.type === 'renewal' ? 'تجديد' : 'اشتراك أصلي',
+                    source: `${customer ? customer.name : (acc.customerName || 'عميل')} - ${platform ? platform.name : 'خدمة'}${plan ? ' / ' + plan.name : ''}`,
+                    period: `${entry.periodStart || '-'} إلى ${entry.periodEnd || '-'}`,
+                    amount: Number(entry.amount || 0),
+                    status: entry.isPaid ? 'محصل' : 'غير مسدد',
+                    statusClass: entry.isPaid ? 'text-success' : 'text-danger'
+                });
+            });
+        });
+
+        DataManager.getServicePlans().forEach(plan => {
+            const platform = DataManager.getPlatformById(plan.platformId);
+            const expenses = DataManager.getPlanExpenses ? DataManager.getPlanExpenses(plan.id) : [];
+            if (expenses.length > 0) {
+                expenses.forEach(expense => {
+                    rows.push({
+                        date: expense.paidAt || expense.periodStart || expense.createdAt || '',
+                        type: 'مصروف خطة',
+                        source: `${platform ? platform.name : 'خدمة'}${plan.name ? ' / ' + plan.name : ''}`,
+                        period: `${expense.periodStart || '-'} إلى ${expense.periodEnd || '-'}`,
+                        amount: -Number(expense.amount || 0),
+                        status: expense.note || 'مصروف',
+                        statusClass: 'text-warning',
+                        expenseId: expense.id
+                    });
+                });
+                return;
+            }
+
+            const cost = Number(plan.registrationCost || 0);
+            if (!cost) return;
+            rows.push({
+                date: plan.createdAt || plan.startDate || '',
+                type: 'تكلفة خطة قديمة',
+                source: `${platform ? platform.name : 'خدمة'}${plan.name ? ' / ' + plan.name : ''}`,
+                period: 'Fallback للتوافق',
+                amount: -cost,
+                status: 'تكلفة افتراضية',
+                statusClass: 'text-warning'
+            });
+        });
+
+        return rows.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+    }
+
+    function openFinancialLedger() {
+        const summary = document.getElementById('financialLedgerSummary');
+        const body = document.getElementById('financialLedgerBody');
+        if (!summary || !body) return;
+
+        const stats = DataManager.calculateStats();
+        const rows = buildFinancialLedgerRows();
+        const fmt = (num) => Number(num || 0).toLocaleString('ar-EG');
+
+        summary.innerHTML = `
+            <div class="ledger-summary-card"><small>المستحق</small><strong>${fmt(stats.totalRevenue)} ج.م</strong></div>
+            <div class="ledger-summary-card success"><small>المحصل</small><strong>${fmt(stats.totalPaid)} ج.م</strong></div>
+            <div class="ledger-summary-card danger"><small>غير المسدد</small><strong>${fmt(stats.totalUnpaid)} ج.م</strong></div>
+            <div class="ledger-summary-card warning"><small>التكلفة</small><strong>${fmt(stats.totalCost)} ج.م</strong></div>
+            <div class="ledger-summary-card"><small>صافي المحصل</small><strong>${fmt(stats.netCollected)} ج.م</strong></div>
+        `;
+
+        if (rows.length === 0) {
+            body.innerHTML = '<div class="ledger-empty">لا توجد معاملات مالية مسجلة.</div>';
+            openModal('financialLedgerModal');
+            return;
+        }
+
+        body.innerHTML = `
+            <table class="ledger-table">
+                <thead>
+                    <tr>
+                        <th>التاريخ</th>
+                        <th>النوع</th>
+                        <th>البيان</th>
+                        <th>الفترة</th>
+                        <th>الحالة</th>
+                        <th>المبلغ</th>
+                        <th>إجراء</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${rows.map(row => `
+                        <tr>
+                            <td>${escapeHtml(row.date || '-')}</td>
+                            <td>${escapeHtml(row.type)}</td>
+                            <td>${escapeHtml(row.source)}</td>
+                            <td>${escapeHtml(row.period)}</td>
+                            <td><span class="${row.statusClass}">${escapeHtml(row.status)}</span></td>
+                            <td class="${row.amount < 0 ? 'text-warning' : 'text-success'}">${row.amount < 0 ? '-' : ''}${fmt(Math.abs(row.amount))} ج.م</td>
+                            <td>${row.expenseId ? `<button class="btn-icon ledger-delete-expense-btn" data-id="${escapeAttr(row.expenseId)}" title="حذف المصروف"><i class="fa-solid fa-trash text-danger"></i></button>` : ''}</td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            </table>
+        `;
+        body.querySelectorAll('.ledger-delete-expense-btn').forEach(btn => {
+            btn.addEventListener('click', () => deletePlanExpenseFromUi(btn.dataset.id));
+        });
+        openModal('financialLedgerModal');
+    }
+
+    const btnFinancialLedger = document.getElementById('btnFinancialLedger');
+    if (btnFinancialLedger) {
+        btnFinancialLedger.addEventListener('click', openFinancialLedger);
+    }
+
+    function readBackupComparisonFile(file) {
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (event) => {
+            try {
+                const backup = JSON.parse(event.target.result);
+                showBackupFinancialComparison(backup);
+            } catch (error) {
+                Swal.fire({ icon: 'error', title: 'ملف غير صالح', text: 'تعذر قراءة ملف النسخة الاحتياطية.', background: '#111827', color: '#fff' });
+            }
+        };
+        reader.readAsText(file);
+    }
+
+    function compareNumberField(beforeValue, afterValue) {
+        const before = Number(beforeValue || 0);
+        const after = Number(afterValue || 0);
+        return {
+            before,
+            after,
+            diff: after - before,
+            changed: before !== after
+        };
+    }
+
+    function showBackupFinancialComparison(backup) {
+        const rows = [];
+        const backupPlans = Array.isArray(backup.servicePlans) ? backup.servicePlans : [];
+        const backupAccounts = Array.isArray(backup.accounts) ? backup.accounts : [];
+        const backupPlanMap = new Map(backupPlans.map(plan => [plan.id, plan]));
+        const backupAccountMap = new Map(backupAccounts.map(acc => [acc.id, acc]));
+
+        DataManager.getServicePlans().forEach(plan => {
+            const oldPlan = backupPlanMap.get(plan.id);
+            if (!oldPlan) return;
+            [
+                { key: 'registrationCost', label: 'تكلفة دورة الخطة' },
+                { key: 'pricePerMember', label: 'سعر دورة العضو' }
+            ].forEach(field => {
+                const result = compareNumberField(oldPlan[field.key], plan[field.key]);
+                if (!result.changed) return;
+                rows.push({
+                    type: 'خطة',
+                    name: plan.name || oldPlan.name || 'خطة',
+                    field: field.label,
+                    before: result.before,
+                    after: result.after,
+                    diff: result.diff
+                });
+            });
+        });
+
+        DataManager.getAccounts().forEach(acc => {
+            const oldAcc = backupAccountMap.get(acc.id);
+            if (!oldAcc) return;
+            [
+                { key: 'revenue', label: 'قيمة اشتراك الأكونت' },
+                { key: 'refund', label: 'التعويض' }
+            ].forEach(field => {
+                const result = compareNumberField(oldAcc[field.key], acc[field.key]);
+                if (!result.changed) return;
+                const customer = DataManager.getCustomerById(acc.customerId);
+                const platform = DataManager.getPlatformById(acc.platformId);
+                rows.push({
+                    type: 'اشتراك',
+                    name: `${customer ? customer.name : 'عميل'} - ${platform ? platform.name : 'خدمة'}`,
+                    field: field.label,
+                    before: result.before,
+                    after: result.after,
+                    diff: result.diff
+                });
+            });
+        });
+
+        if (rows.length === 0) {
+            Swal.fire({ icon: 'success', title: 'لا توجد فروق مالية', text: 'لم يتم العثور على اختلافات في حقول التكلفة أو سعر الدورة أو قيمة الاشتراكات.', background: '#111827', color: '#fff' });
+            return;
+        }
+
+        const fmt = (num) => Number(num || 0).toLocaleString('ar-EG');
+        const html = `
+            <div class="backup-compare-wrap">
+                <table class="ledger-table backup-compare-table">
+                    <thead>
+                        <tr>
+                            <th>النوع</th>
+                            <th>البيان</th>
+                            <th>الحقل</th>
+                            <th>في النسخة</th>
+                            <th>الحالي</th>
+                            <th>الفرق</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${rows.map(row => `
+                            <tr>
+                                <td>${escapeHtml(row.type)}</td>
+                                <td>${escapeHtml(row.name)}</td>
+                                <td>${escapeHtml(row.field)}</td>
+                                <td>${fmt(row.before)} ج.م</td>
+                                <td>${fmt(row.after)} ج.م</td>
+                                <td class="${row.diff >= 0 ? 'text-success' : 'text-danger'}">${row.diff >= 0 ? '+' : ''}${fmt(row.diff)} ج.م</td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            </div>
+            <p class="text-muted" style="text-align:right;margin-top:0.75rem;">هذه مقارنة فقط ولم يتم تعديل أي بيانات.</p>
+        `;
+
+        Swal.fire({
+            title: 'فروق مالية بين النسخة الاحتياطية والحالية',
+            html,
+            width: 950,
+            confirmButtonText: 'إغلاق',
+            background: '#111827',
+            color: '#fff'
+        });
+    }
+
+    const btnCompareBackupLedger = document.getElementById('btnCompareBackupLedger');
+    const backupCompareInput = document.getElementById('backupCompareInput');
+    if (btnCompareBackupLedger && backupCompareInput) {
+        btnCompareBackupLedger.addEventListener('click', () => backupCompareInput.click());
+        backupCompareInput.addEventListener('change', (event) => {
+            readBackupComparisonFile(event.target.files[0]);
+            event.target.value = '';
+        });
     }
 
     function renderFollowUpCenter(accounts) {
@@ -963,6 +1223,29 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!startInput || !durationInput || !startInput.value) return;
         setAccountEndDate(addDaysToDate(startInput.value, durationInput.value), manual);
     }
+
+    function compactAccountPaymentFields() {
+        if (document.querySelector('.subscription-payment-row')) return;
+        const revenueInput = document.getElementById('accRevenue');
+        const paidInput = document.getElementById('accIsPaid');
+        if (!revenueInput || !paidInput) return;
+
+        const revenueGroup = revenueInput.closest('.form-group');
+        const paidGroup = paidInput.closest('.form-group');
+        const paidLabel = paidInput.closest('.payment-toggle-label');
+        if (!revenueGroup || !paidGroup || !paidLabel) return;
+
+        const row = document.createElement('div');
+        row.className = 'subscription-payment-row';
+        revenueInput.parentNode.insertBefore(row, revenueInput);
+        row.appendChild(revenueInput);
+        paidLabel.classList.add('inline-payment-toggle');
+        row.appendChild(paidLabel);
+        revenueGroup.classList.add('full-width', 'compact-payment-group');
+        paidGroup.remove();
+    }
+
+    compactAccountPaymentFields();
 
     function refreshAccountEndDateFromSelectedPlan() {
         if (accountEndDateManuallyEdited) {
@@ -1467,10 +1750,14 @@ document.addEventListener('DOMContentLoaded', () => {
             const membersCount = DataManager.getServicePlanMembersCount(plan.id);
             const planFin = DataManager.getPlanFinancials(plan.id);
             const planCycle = DataManager.normalizePlanBillingCycle(plan);
+            const planExpenses = DataManager.getPlanExpenses ? DataManager.getPlanExpenses(plan.id) : [];
             const billingBadge = getBillingCycleBadge(planCycle);
             const durationText = planCycle === 'custom_days'
                 ? `${parseInt(plan.durationDays || 365, 10)} يوم`
                 : 'تحسب من تاريخ الاشتراك';
+            const costText = planExpenses.length > 0
+                ? `مصروفات الخطة: ${Number(planFin.planCost).toLocaleString('ar-EG')} ج.م (${planExpenses.length})`
+                : `تكلفة دورة افتراضية: ${Number(plan.registrationCost || 0).toLocaleString('ar-EG')} ج.م`;
 
             const maskedEmail = plan.email ? plan.email.replace(/(.{2})(.*)(@.*)/, '$1***$3') : '—';
 
@@ -1492,19 +1779,22 @@ document.addEventListener('DOMContentLoaded', () => {
                     <div class="plan-stat"><i class="fa-solid fa-tag text-success"></i> <span>${Number(plan.pricePerMember || 0).toLocaleString('ar-EG')} ج.م / عضو</span></div>
                     <div class="plan-stat"><i class="fa-solid fa-calendar-day text-info"></i> <span>${durationText}</span></div>
                     <div class="plan-stat"><i class="fa-solid fa-envelope text-muted"></i> <span>${escapeHtml(maskedEmail)}</span></div>
-                    ${plan.registrationCost ? `<div class="plan-stat"><i class="fa-solid fa-receipt text-warning"></i> <span>تكلفة الخطة: ${Number(plan.registrationCost).toLocaleString('ar-EG')} ج.م</span></div>` : ''}
+                    ${planFin.planCost ? `<div class="plan-stat"><i class="fa-solid fa-receipt text-warning"></i> <span>${costText}</span></div>` : ''}
                     <div class="plan-stat" style="border-top:1px solid rgba(255,255,255,0.06); padding-top:0.5rem; margin-top:0.3rem;">
                         <i class="fa-solid fa-coins text-success"></i>
-                        <span>محصّل: <strong class="text-success">${Number(planFin.totalRevenue).toLocaleString('ar-EG')}</strong> ج.م</span>
+                        <span>محصّل: <strong class="text-success">${Number(planFin.totalPaid !== undefined ? planFin.totalPaid : planFin.totalRevenue).toLocaleString('ar-EG')}</strong> ج.م</span>
                     </div>
-                    ${plan.registrationCost ? `<div class="plan-stat">
-                        <i class="fa-solid fa-chart-line ${planFin.netProfit >= 0 ? 'text-success' : 'text-danger'}"></i>
-                        <span>صافي: <strong class="${planFin.netProfit >= 0 ? 'text-success' : 'text-danger'}">${planFin.netProfit >= 0 ? '+' : ''}${Number(planFin.netProfit).toLocaleString('ar-EG')}</strong> ج.م</span>
+                    ${planFin.planCost ? `<div class="plan-stat">
+                        <i class="fa-solid fa-chart-line ${(planFin.netCollected !== undefined ? planFin.netCollected : planFin.netProfit) >= 0 ? 'text-success' : 'text-danger'}"></i>
+                        <span>صافي محصّل: <strong class="${(planFin.netCollected !== undefined ? planFin.netCollected : planFin.netProfit) >= 0 ? 'text-success' : 'text-danger'}">${(planFin.netCollected !== undefined ? planFin.netCollected : planFin.netProfit) >= 0 ? '+' : ''}${Number(planFin.netCollected !== undefined ? planFin.netCollected : planFin.netProfit).toLocaleString('ar-EG')}</strong> ج.م</span>
                     </div>` : ''}
                 </div>
                 <div class="plan-card-actions">
                     <button class="btn btn-sm btn-outline edit-plan-btn" data-id="${plan.id}">
                         <i class="fa-solid fa-pen"></i> تعديل
+                    </button>
+                    <button class="btn btn-sm btn-outline add-plan-expense-btn" data-id="${plan.id}">
+                        <i class="fa-solid fa-receipt"></i> مصروف
                     </button>
                     <button class="btn btn-sm btn-outline text-danger delete-plan-btn" data-id="${plan.id}">
                         <i class="fa-solid fa-trash"></i> حذف
@@ -1516,6 +1806,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
         grid.querySelectorAll('.edit-plan-btn').forEach(btn => {
             btn.addEventListener('click', (e) => { e.stopPropagation(); editPlan(btn.dataset.id); });
+        });
+        grid.querySelectorAll('.add-plan-expense-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => { e.stopPropagation(); addPlanExpenseFromUi(btn.dataset.id); });
         });
         grid.querySelectorAll('.delete-plan-btn').forEach(btn => {
             btn.addEventListener('click', (e) => { e.stopPropagation(); deletePlan(btn.dataset.id); });
@@ -1557,6 +1850,87 @@ document.addEventListener('DOMContentLoaded', () => {
         syncPlanBillingCycleUi();
         document.getElementById('planModalTitle').innerText = 'تعديل خطة الاشتراك';
         openModal('planModal');
+    }
+
+    async function addPlanExpenseFromUi(planId) {
+        const plan = DataManager.getServicePlanById(planId);
+        if (!plan) return;
+        const today = new Date().toISOString().split('T')[0];
+        const defaultAmount = Number(plan.registrationCost || 0);
+        const result = await Swal.fire({
+            title: 'إضافة مصروف للخطة',
+            html: `
+                <div class="swal-form-grid">
+                    <label style="display:block;text-align:right;margin-bottom:0.35rem;">المبلغ</label>
+                    <input type="number" id="planExpenseAmount" class="swal2-input" min="0" step="0.01" value="${defaultAmount || ''}" style="width:100%;margin:0 0 0.75rem;">
+                    <label style="display:block;text-align:right;margin-bottom:0.35rem;">من تاريخ</label>
+                    <input type="date" id="planExpenseStart" class="swal2-input" value="${today}" style="width:100%;margin:0 0 0.75rem;">
+                    <label style="display:block;text-align:right;margin-bottom:0.35rem;">إلى تاريخ</label>
+                    <input type="date" id="planExpenseEnd" class="swal2-input" value="${DataManager.addCalendarMonths(today, 1)}" style="width:100%;margin:0 0 0.75rem;">
+                    <label style="display:block;text-align:right;margin-bottom:0.35rem;">ملاحظة</label>
+                    <input type="text" id="planExpenseNote" class="swal2-input" value="مصروف دورة فوترة" style="width:100%;margin:0;">
+                </div>
+            `,
+            showCancelButton: true,
+            confirmButtonText: 'إضافة المصروف',
+            cancelButtonText: 'إلغاء',
+            background: '#111827',
+            color: '#fff',
+            preConfirm: () => {
+                const amount = parseFloat(document.getElementById('planExpenseAmount').value);
+                const periodStart = document.getElementById('planExpenseStart').value;
+                const periodEnd = document.getElementById('planExpenseEnd').value;
+                if (!amount || amount < 0 || !periodStart || !periodEnd) {
+                    Swal.showValidationMessage('يرجى إدخال مبلغ وفترة صحيحة');
+                    return false;
+                }
+                return {
+                    planId,
+                    platformId: plan.platformId || '',
+                    amount,
+                    periodStart,
+                    periodEnd,
+                    paidAt: today,
+                    note: document.getElementById('planExpenseNote').value.trim()
+                };
+            }
+        });
+
+        if (!result.isConfirmed) return;
+        try {
+            await DataManager.addPlanExpense(result.value);
+            renderPlans();
+            renderDashboard();
+            showToast('تمت إضافة مصروف الخطة');
+        } catch (error) {
+            console.error('Failed to add plan expense:', error);
+            Swal.fire({ icon: 'error', title: 'تعذر إضافة المصروف', text: 'حدث خطأ أثناء حفظ مصروف الخطة.', background: '#111827', color: '#fff' });
+        }
+    }
+
+    async function deletePlanExpenseFromUi(expenseId) {
+        const result = await Swal.fire({
+            title: 'حذف مصروف الخطة؟',
+            text: 'سيتم حذف هذا السطر من مصروفات الخطة فقط.',
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonText: 'حذف',
+            cancelButtonText: 'إلغاء',
+            background: '#111827',
+            color: '#fff'
+        });
+        if (!result.isConfirmed) return;
+
+        try {
+            await DataManager.deletePlanExpense(expenseId);
+            renderPlans();
+            renderDashboard();
+            openFinancialLedger();
+            showToast('تم حذف مصروف الخطة');
+        } catch (error) {
+            console.error('Failed to delete plan expense:', error);
+            Swal.fire({ icon: 'error', title: 'تعذر حذف المصروف', text: 'حدث خطأ أثناء حذف مصروف الخطة.', background: '#111827', color: '#fff' });
+        }
     }
 
     document.getElementById('btnSavePlan').addEventListener('click', async (e) => {
@@ -1686,8 +2060,8 @@ document.addEventListener('DOMContentLoaded', () => {
             const isMonthly = accCycle === 'monthly';
             const isFollowedLifecycle = ['active', 'warning', 'expired'].includes(statusInfo.status);
             const lifecycleButtons = `
-                ${isFollowedLifecycle && isMonthly ? `<button class="btn-icon text-success renew-monthly-acc-btn" data-id="${acc.id}" title="تجديد شهري"><i class="fa-solid fa-calendar-plus"></i></button>` : ''}
-                ${isFollowedLifecycle && !isMonthly ? `<button class="btn-icon text-primary renew-acc-btn" data-id="${acc.id}" title="تجديد"><i class="fa-solid fa-rotate-right"></i></button>` : ''}
+                ${isFollowedLifecycle && isMonthly ? `<button class="btn-icon btn-action-pill text-success renew-monthly-acc-btn" data-id="${acc.id}" title="تجديد شهري"><i class="fa-solid fa-calendar-plus"></i><span>تجديد</span></button>` : ''}
+                ${isFollowedLifecycle && !isMonthly ? `<button class="btn-icon btn-action-pill text-primary renew-acc-btn" data-id="${acc.id}" title="تجديد"><i class="fa-solid fa-rotate-right"></i><span>تجديد</span></button>` : ''}
                 ${isFollowedLifecycle ? `<button class="btn-icon text-warning pause-acc-btn" data-id="${acc.id}" title="إيقاف مؤقت"><i class="fa-solid fa-pause"></i></button>` : ''}
                 ${isFollowedLifecycle || statusInfo.status === 'paused' ? `<button class="btn-icon text-danger cancel-acc-btn" data-id="${acc.id}" title="إلغاء الاشتراك"><i class="fa-solid fa-ban"></i></button>` : ''}
                 ${statusInfo.status === 'paused' || statusInfo.status === 'cancelled' ? `<button class="btn-icon text-success reactivate-acc-btn" data-id="${acc.id}" title="إعادة تفعيل"><i class="fa-solid fa-play"></i></button>` : ''}
@@ -2951,6 +3325,16 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     document.getElementById('btnImportData').addEventListener('click', () => {
+        if (DataManager.isFirebaseReady) {
+            Swal.fire({
+                icon: 'info',
+                title: 'الاستيراد المباشر معطل',
+                text: 'التطبيق متصل بـ Firebase، لذلك لا يتم استبدال بيانات السحابة من ملف احتياطي حتى لا تُمسح البيانات الحالية بالخطأ.',
+                background: '#111827',
+                color: '#fff'
+            });
+            return;
+        }
         document.getElementById('importFileInput').click();
     });
 
@@ -2965,8 +3349,8 @@ document.addEventListener('DOMContentLoaded', () => {
         }).then(result => {
             if (result.isConfirmed) {
                 const reader = new FileReader();
-                reader.onload = (ev) => {
-                    const success = DataManager.importData(ev.target.result);
+                reader.onload = async (ev) => {
+                    const success = await DataManager.importData(ev.target.result);
                     if (success) { showToast('تم استيراد البيانات بنجاح'); renderDashboard(); renderAccounts(); renderPlatforms(); renderCustomers(); }
                     else { Swal.fire({ icon: 'error', title: 'خطأ', text: 'فشل في قراءة ملف البيانات.', background: '#111827', color: '#fff' }); }
                 };

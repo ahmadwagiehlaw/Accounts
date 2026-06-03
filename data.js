@@ -6,6 +6,7 @@ const ACCOUNTS_KEY = STORAGE_PREFIX + 'accounts';
 const CUSTOMERS_KEY = STORAGE_PREFIX + 'customers';
 const PLANS_KEY = STORAGE_PREFIX + 'service_plans';
 const RENEWALS_KEY = STORAGE_PREFIX + 'renewals';
+const PLAN_EXPENSES_KEY = STORAGE_PREFIX + 'plan_expenses';
 const JOB_TITLES_KEY = STORAGE_PREFIX + 'job_titles';
 const WORKPLACES_KEY = STORAGE_PREFIX + 'workplaces';
 
@@ -38,6 +39,7 @@ class DataManager {
     static customers = [];
     static servicePlans = [];
     static renewals = [];
+    static planExpenses = [];
     static jobTitles = [];
     static workplaces = [];
     static isFirebaseReady = false;
@@ -51,6 +53,7 @@ class DataManager {
         this.customers = JSON.parse(localStorage.getItem(CUSTOMERS_KEY) || '[]');
         this.servicePlans = JSON.parse(localStorage.getItem(PLANS_KEY) || '[]');
         this.renewals = JSON.parse(localStorage.getItem(RENEWALS_KEY) || '[]');
+        this.planExpenses = JSON.parse(localStorage.getItem(PLAN_EXPENSES_KEY) || '[]');
         this.initLookups();
     }
 
@@ -114,6 +117,13 @@ class DataManager {
             localStorage.setItem(RENEWALS_KEY, JSON.stringify(this.renewals));
             window.dispatchEvent(new Event('dataChanged'));
         });
+
+        // Sync Plan Expenses
+        onSnapshot(collection(db, "planExpenses"), (snapshot) => {
+            this.planExpenses = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            localStorage.setItem(PLAN_EXPENSES_KEY, JSON.stringify(this.planExpenses));
+            window.dispatchEvent(new Event('dataChanged'));
+        });
     }
 
     // ==================== JOB TITLES ====================
@@ -161,14 +171,40 @@ class DataManager {
     static getServicePlanAccounts(planId) {
         return this.accounts.filter(a => a.servicePlanId === planId);
     }
+    static getPlanExpenses(planId) {
+        return this.planExpenses.filter(expense => expense.planId === planId);
+    }
+    static getPlanExpensesTotal(planId) {
+        return this.getPlanExpenses(planId).reduce((sum, expense) => sum + this.parseAmount(expense.amount), 0);
+    }
+    static getPlanCost(plan) {
+        if (!plan) return 0;
+        const expensesTotal = this.getPlanExpensesTotal(plan.id);
+        return expensesTotal > 0 ? expensesTotal : this.parseAmount(plan.registrationCost);
+    }
     static getPlanFinancials(planId) {
         const plan = this.getServicePlanById(planId);
-        if (!plan) return { totalRevenue: 0, planCost: 0, netProfit: 0, membersCount: 0 };
+        if (!plan) return { totalRevenue: 0, totalPaid: 0, totalUnpaid: 0, planCost: 0, netProfit: 0, netCollected: 0, membersCount: 0 };
         const members = this.getServicePlanAccounts(planId);
         let totalRevenue = 0;
-        members.forEach(acc => totalRevenue += parseFloat(acc.revenue || 0));
-        const planCost = parseFloat(plan.registrationCost || 0);
-        return { totalRevenue, planCost, netProfit: totalRevenue - planCost, membersCount: members.length };
+        let totalPaid = 0;
+        let totalUnpaid = 0;
+        members.forEach(acc => {
+            const financials = this.getAccountFinancials(acc);
+            totalRevenue += financials.billedAmount;
+            totalPaid += financials.paidAmount;
+            totalUnpaid += financials.unpaidAmount;
+        });
+        const planCost = this.getPlanCost(plan);
+        return {
+            totalRevenue,
+            totalPaid,
+            totalUnpaid,
+            planCost,
+            netProfit: totalRevenue - planCost,
+            netCollected: totalPaid - planCost,
+            membersCount: members.length
+        };
     }
 
     static async addServicePlan(plan) {
@@ -191,6 +227,45 @@ class DataManager {
         if (!this.isFirebaseReady) return;
         const ref = window.firebaseApp.doc(window.firebaseApp.db, "servicePlans", id);
         await window.firebaseApp.deleteDoc(ref);
+    }
+
+    static async addPlanExpense(expense) {
+        const record = {
+            ...expense,
+            amount: this.parseAmount(expense.amount),
+            createdAt: new Date().toISOString()
+        };
+
+        if (!this.isFirebaseReady) {
+            record.id = Date.now().toString();
+            this.planExpenses.push(record);
+            localStorage.setItem(PLAN_EXPENSES_KEY, JSON.stringify(this.planExpenses));
+            return record;
+        }
+
+        const docRef = await window.firebaseApp.addDoc(
+            window.firebaseApp.collection(window.firebaseApp.db, "planExpenses"), record
+        );
+        const savedRecord = { id: docRef.id, ...record };
+        this.planExpenses.push(savedRecord);
+        localStorage.setItem(PLAN_EXPENSES_KEY, JSON.stringify(this.planExpenses));
+        return savedRecord;
+    }
+
+    static async deletePlanExpense(id) {
+        const previous = [...this.planExpenses];
+        this.planExpenses = this.planExpenses.filter(expense => expense.id !== id);
+        localStorage.setItem(PLAN_EXPENSES_KEY, JSON.stringify(this.planExpenses));
+        if (!this.isFirebaseReady) return;
+
+        try {
+            const ref = window.firebaseApp.doc(window.firebaseApp.db, "planExpenses", id);
+            await window.firebaseApp.deleteDoc(ref);
+        } catch (error) {
+            this.planExpenses = previous;
+            localStorage.setItem(PLAN_EXPENSES_KEY, JSON.stringify(this.planExpenses));
+            throw error;
+        }
     }
 
     // ==================== CUSTOMERS ====================
@@ -223,13 +298,16 @@ class DataManager {
 
     static getCustomerStats(customerId) {
         const subs = this.getCustomerSubscriptions(customerId);
-        let totalPaid = 0, activeSubs = 0;
+        let totalPaid = 0, totalBilled = 0, totalUnpaid = 0, activeSubs = 0;
         subs.forEach(acc => {
-            totalPaid += parseFloat(acc.revenue || 0);
+            const financials = this.getAccountFinancials(acc);
+            totalPaid += financials.paidAmount;
+            totalBilled += financials.billedAmount;
+            totalUnpaid += financials.unpaidAmount;
             const status = this.getAccountStatus(acc);
             if (status.status === 'active' || status.status === 'warning') activeSubs++;
         });
-        return { totalSubscriptions: subs.length, activeSubs, totalPaid };
+        return { totalSubscriptions: subs.length, activeSubs, totalPaid, totalBilled, totalUnpaid };
     }
 
     // ==================== PLATFORMS ====================
@@ -264,6 +342,70 @@ class DataManager {
     static getRenewals() { return this.renewals; }
     static getRenewalsForAccount(accountId) {
         return this.renewals.filter(r => r.accountId === accountId);
+    }
+
+    static parseAmount(value) {
+        const amount = parseFloat(value);
+        return Number.isFinite(amount) ? amount : 0;
+    }
+
+    static getAccountBillingEntries(account) {
+        if (!account) return [];
+
+        const renewals = this.getRenewalsForAccount(account.id);
+        const period = this.getAccountPeriod(account);
+        const entries = [];
+        const initialAmount = this.parseAmount(account.revenue);
+
+        entries.push({
+            id: `${account.id || 'account'}_initial`,
+            type: 'initial',
+            accountId: account.id || '',
+            servicePlanId: account.servicePlanId || '',
+            amount: initialAmount,
+            isPaid: renewals.length > 0 ? true : account.isPaid === true,
+            periodStart: account.previousStartDate || account.startDate || period.startDate || '',
+            periodEnd: account.previousPeriodEnd || account.previousCurrentPeriodEnd || period.endDate || '',
+            createdAt: account.createdAt || ''
+        });
+
+        renewals.forEach(renewal => {
+            entries.push({
+                id: renewal.id || '',
+                type: 'renewal',
+                accountId: renewal.accountId || account.id || '',
+                servicePlanId: renewal.servicePlanId || account.servicePlanId || '',
+                amount: this.parseAmount(renewal.amount !== undefined ? renewal.amount : account.revenue),
+                isPaid: renewal.isPaid === true,
+                periodStart: renewal.newPeriodStart || renewal.currentPeriodStart || '',
+                periodEnd: renewal.newPeriodEnd || renewal.currentPeriodEnd || '',
+                createdAt: renewal.renewedAt || renewal.createdAt || ''
+            });
+        });
+
+        return entries.sort((a, b) => {
+            const aDate = a.periodStart || a.createdAt || '';
+            const bDate = b.periodStart || b.createdAt || '';
+            return aDate.localeCompare(bDate);
+        });
+    }
+
+    static getAccountFinancials(account) {
+        const entries = this.getAccountBillingEntries(account);
+        const billedAmount = entries.reduce((sum, entry) => sum + this.parseAmount(entry.amount), 0);
+        const paidAmount = entries.reduce((sum, entry) => entry.isPaid ? sum + this.parseAmount(entry.amount) : sum, 0);
+        const refundAmount = this.parseAmount(account && account.refund);
+        const unpaidAmount = Math.max(0, billedAmount - paidAmount);
+
+        return {
+            entries,
+            billedAmount,
+            paidAmount,
+            unpaidAmount,
+            refundAmount,
+            netAmount: billedAmount - refundAmount,
+            netPaidAmount: paidAmount - refundAmount
+        };
     }
 
     static formatDate(date) {
@@ -615,14 +757,17 @@ class DataManager {
     // ==================== ANALYTICS ====================
     static calculateStats() {
         let stats = {
-            totalCost: 0, totalRevenue: 0, totalRefunds: 0, netProfit: 0,
+            totalCost: 0, totalRevenue: 0, totalPaid: 0, totalUnpaid: 0, totalRefunds: 0, netProfit: 0, netCollected: 0,
             activeAccounts: 0, expiredAccounts: 0,
             totalAccounts: this.accounts.length, totalCustomers: this.customers.length
         };
-        // Revenue & refunds from subscriptions
+        // Financial totals from initial subscriptions and renewal records.
         this.accounts.forEach(acc => {
-            stats.totalRevenue += parseFloat(acc.revenue || 0);
-            stats.totalRefunds += parseFloat(acc.refund || 0);
+            const financials = this.getAccountFinancials(acc);
+            stats.totalRevenue += financials.billedAmount;
+            stats.totalPaid += financials.paidAmount;
+            stats.totalUnpaid += financials.unpaidAmount;
+            stats.totalRefunds += financials.refundAmount;
             const status = this.getAccountStatus(acc);
             if (status.status === 'active' || status.status === 'warning') stats.activeAccounts++;
             else if (status.status === 'expired') stats.expiredAccounts++;
@@ -630,10 +775,11 @@ class DataManager {
 
         // Cost from plans (registrationCost)
         this.servicePlans.forEach(plan => {
-            stats.totalCost += parseFloat(plan.registrationCost || 0);
+            stats.totalCost += this.getPlanCost(plan);
         });
 
         stats.netProfit = stats.totalRevenue - stats.totalCost - stats.totalRefunds;
+        stats.netCollected = stats.totalPaid - stats.totalCost - stats.totalRefunds;
         return stats;
     }
 
@@ -663,16 +809,49 @@ class DataManager {
             accounts: this.accounts,
             customers: this.customers,
             renewals: this.renewals,
+            planExpenses: this.planExpenses,
+            jobTitles: this.jobTitles,
+            workplaces: this.workplaces,
             exportDate: new Date().toISOString()
         }, null, 2);
     }
 
     static async importData(jsonString) {
-        console.warn("Import is disabled when Firebase is active, to prevent overwriting cloud data.");
-        return false;
+        if (this.isFirebaseReady) {
+            console.warn("Import is disabled when Firebase is active, to prevent overwriting cloud data.");
+            return false;
+        }
+
+        try {
+            const data = JSON.parse(jsonString);
+            this.platforms = Array.isArray(data.platforms) ? data.platforms : [];
+            this.servicePlans = Array.isArray(data.servicePlans) ? data.servicePlans : [];
+            this.accounts = Array.isArray(data.accounts) ? data.accounts : [];
+            this.customers = Array.isArray(data.customers) ? data.customers : [];
+            this.renewals = Array.isArray(data.renewals) ? data.renewals : [];
+            this.planExpenses = Array.isArray(data.planExpenses) ? data.planExpenses : [];
+            this.jobTitles = Array.isArray(data.jobTitles) ? data.jobTitles : this.jobTitles;
+            this.workplaces = Array.isArray(data.workplaces) ? data.workplaces : this.workplaces;
+
+            localStorage.setItem(PLATFORMS_KEY, JSON.stringify(this.platforms));
+            localStorage.setItem(PLANS_KEY, JSON.stringify(this.servicePlans));
+            localStorage.setItem(ACCOUNTS_KEY, JSON.stringify(this.accounts));
+            localStorage.setItem(CUSTOMERS_KEY, JSON.stringify(this.customers));
+            localStorage.setItem(RENEWALS_KEY, JSON.stringify(this.renewals));
+            localStorage.setItem(PLAN_EXPENSES_KEY, JSON.stringify(this.planExpenses));
+            localStorage.setItem(JOB_TITLES_KEY, JSON.stringify(this.jobTitles));
+            localStorage.setItem(WORKPLACES_KEY, JSON.stringify(this.workplaces));
+            return true;
+        } catch (error) {
+            console.error("Failed to import data:", error);
+            return false;
+        }
     }
 
     static async cleanupDatabase() {
+        console.warn("cleanupDatabase is disabled because the old Claude/ChatGPT merge is no longer safe.");
+        return false;
+
         if (!this.isFirebaseReady) return;
 
         console.log("Starting database cleanup... Merging duplicates and replacing Claude with ChatGPT.");
@@ -734,6 +913,34 @@ class DataManager {
                 confirmButtonText: 'حسناً'
             });
         }
+    }
+
+    static async repairAccountPlatformsFromPlans() {
+        const updates = [];
+        const previousAccounts = this.accounts.map(acc => ({ ...acc }));
+        this.accounts.forEach(acc => {
+            if (!acc.servicePlanId) return;
+            const plan = this.getServicePlanById(acc.servicePlanId);
+            if (!plan || !plan.platformId || acc.platformId === plan.platformId) return;
+            updates.push({ account: acc, platformId: plan.platformId });
+        });
+
+        updates.forEach(item => {
+            item.account.platformId = item.platformId;
+        });
+        localStorage.setItem(ACCOUNTS_KEY, JSON.stringify(this.accounts));
+
+        try {
+            for (const item of updates) {
+                await this.updateAccount({ id: item.account.id, platformId: item.platformId });
+            }
+        } catch (error) {
+            this.accounts = previousAccounts;
+            localStorage.setItem(ACCOUNTS_KEY, JSON.stringify(this.accounts));
+            throw error;
+        }
+
+        return updates.length;
     }
 }
 

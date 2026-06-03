@@ -679,6 +679,106 @@ h6 {
     background: rgba(255, 255, 255, 0.1);
 }
 
+.financial-ledger-modal {
+    max-width: 980px;
+}
+
+.ledger-summary-grid {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(120px, 1fr));
+    gap: 0.6rem;
+    margin-bottom: 1rem;
+}
+
+.ledger-summary-card {
+    padding: 0.75rem;
+    border: 1px solid var(--border-glass);
+    border-radius: var(--radius-md);
+    background: rgba(255, 255, 255, 0.04);
+}
+
+.ledger-summary-card small {
+    display: block;
+    color: var(--text-muted);
+    margin-bottom: 0.25rem;
+    font-size: 0.75rem;
+}
+
+.ledger-summary-card strong {
+    font-size: 1rem;
+}
+
+.ledger-summary-card.success strong {
+    color: var(--success-color);
+}
+
+.ledger-summary-card.danger strong {
+    color: var(--danger-color);
+}
+
+.ledger-summary-card.warning strong {
+    color: var(--warning-color);
+}
+
+.ledger-table-wrap {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+.ledger-table {
+    width: 100%;
+    min-width: 760px;
+    border-collapse: collapse;
+}
+
+.ledger-table th,
+.ledger-table td {
+    padding: 0.65rem 0.75rem;
+    border-bottom: 1px solid var(--border-glass);
+    text-align: right;
+    font-size: 0.86rem;
+    vertical-align: top;
+}
+
+.ledger-table th {
+    color: var(--text-muted);
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+.ledger-empty {
+    padding: 1rem;
+    color: var(--text-muted);
+    text-align: center;
+}
+
+.backup-compare-wrap {
+    max-height: 60vh;
+    overflow: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+.backup-compare-table {
+    min-width: 820px;
+}
+
+@media (max-width: 768px) {
+    .wallet-main-row {
+        gap: 0.6rem;
+        flex-wrap: wrap;
+    }
+
+    #btnFinancialLedger {
+        order: 3;
+        width: 100%;
+        justify-content: center;
+    }
+
+    .ledger-summary-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
 /* Compact Quick Stats Grid */
 .quick-chips-grid {
     display: grid;
@@ -1413,6 +1513,20 @@ h6 {
 .actions-cell {
     display: flex;
     gap: 0.35rem;
+    flex-wrap: wrap;
+}
+
+.btn-action-pill {
+    width: auto;
+    min-width: 72px;
+    padding: 0 0.65rem;
+    gap: 0.35rem;
+}
+
+.btn-action-pill span {
+    font-size: 0.78rem;
+    font-weight: 700;
+    line-height: 1;
 }
 
 /* Empty State */
@@ -1745,6 +1859,62 @@ h6 {
     border-color: var(--primary-color);
     background: rgba(0, 0, 0, 0.35);
     box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+}
+
+.subscription-payment-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 0.55rem;
+    align-items: stretch;
+}
+
+.subscription-payment-row .form-control {
+    min-width: 0;
+}
+
+.payment-toggle-label {
+    cursor: pointer;
+}
+
+.payment-toggle-label input {
+    position: absolute;
+    opacity: 0;
+    pointer-events: none;
+}
+
+.payment-toggle-track {
+    min-width: 116px;
+    height: 100%;
+    min-height: 45px;
+    padding: 0 0.7rem;
+    border: 1px solid rgba(239, 68, 68, 0.35);
+    border-radius: var(--radius-md);
+    background: rgba(239, 68, 68, 0.12);
+    color: var(--danger-color);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 800;
+    font-size: 0.84rem;
+    white-space: nowrap;
+}
+
+.payment-toggle-track .pt-on {
+    display: none;
+}
+
+.payment-toggle-label input:checked + .payment-toggle-track {
+    border-color: rgba(16, 185, 129, 0.45);
+    background: rgba(16, 185, 129, 0.14);
+    color: var(--success-color);
+}
+
+.payment-toggle-label input:checked + .payment-toggle-track .pt-on {
+    display: inline;
+}
+
+.payment-toggle-label input:checked + .payment-toggle-track .pt-off {
+    display: none;
 }
 
 select.form-control {
