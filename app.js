@@ -942,15 +942,25 @@ document.addEventListener('DOMContentLoaded', () => {
             const platform = DataManager.getPlatformById(acc.platformId);
             const plan = acc.servicePlanId ? DataManager.getServicePlanById(acc.servicePlanId) : null;
             const entries = DataManager.getAccountBillingEntries ? DataManager.getAccountBillingEntries(acc) : [];
+            const latestRenewal = DataManager.getLatestRenewalForAccount ? DataManager.getLatestRenewalForAccount(acc.id) : null;
 
             entries.forEach(entry => {
+                const isRenewal = entry.type === 'renewal';
+                const paidAmount = Number(entry.paidAmount || 0);
                 rows.push({
+                    id: entry.id || `${acc.id}_initial`,
+                    kind: isRenewal ? 'renewal' : 'subscription',
+                    accountId: acc.id,
+                    renewalId: isRenewal ? entry.id : '',
+                    canUndo: isRenewal && latestRenewal && latestRenewal.id === entry.id,
                     date: entry.periodStart || entry.createdAt || '',
-                    type: entry.type === 'renewal' ? 'تجديد' : 'اشتراك أصلي',
+                    type: isRenewal ? 'تجديد' : 'اشتراك أصلي',
                     source: `${customer ? customer.name : (acc.customerName || 'عميل')} - ${platform ? platform.name : 'خدمة'}${plan ? ' / ' + plan.name : ''}`,
                     period: `${entry.periodStart || '-'} إلى ${entry.periodEnd || '-'}`,
                     amount: Number(entry.amount || 0),
-                    status: entry.isPaid ? 'محصل' : 'غير مسدد',
+                    paidAmount,
+                    unpaidAmount: Math.max(0, Number(entry.amount || 0) - paidAmount),
+                    status: paidAmount > 0 ? `محصل ${paidAmount.toLocaleString('ar-EG')} ج.م` : 'غير مسدد',
                     statusClass: entry.isPaid ? 'text-success' : 'text-danger'
                 });
             });
@@ -962,6 +972,8 @@ document.addEventListener('DOMContentLoaded', () => {
             if (expenses.length > 0) {
                 expenses.forEach(expense => {
                     rows.push({
+                        id: expense.id,
+                        kind: 'expense',
                         date: expense.paidAt || expense.periodStart || expense.createdAt || '',
                         type: 'مصروف خطة',
                         source: `${platform ? platform.name : 'خدمة'}${plan.name ? ' / ' + plan.name : ''}`,
@@ -978,6 +990,8 @@ document.addEventListener('DOMContentLoaded', () => {
             const cost = Number(plan.registrationCost || 0);
             if (!cost) return;
             rows.push({
+                id: plan.id,
+                kind: 'legacy_cost',
                 date: plan.createdAt || plan.startDate || '',
                 type: 'تكلفة خطة قديمة',
                 source: `${platform ? platform.name : 'خدمة'}${plan.name ? ' / ' + plan.name : ''}`,
@@ -1015,6 +1029,61 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         body.innerHTML = `
+            <div class="ledger-toolbar">
+                <div class="search-box ledger-search-box">
+                    <i class="fa-solid fa-search"></i>
+                    <input type="text" id="ledgerSearch" placeholder="ابحث في المعاملات...">
+                </div>
+                <select id="ledgerTypeFilter" class="form-control">
+                    <option value="all">كل المعاملات</option>
+                    <option value="subscription">اشتراكات أصلية</option>
+                    <option value="renewal">تجديدات</option>
+                    <option value="expense">مصروفات خطط</option>
+                    <option value="legacy_cost">تكلفة قديمة</option>
+                </select>
+            </div>
+            <div id="ledgerRowsContainer"></div>
+        `;
+        renderFinancialLedgerRows(rows);
+        document.getElementById('ledgerSearch')?.addEventListener('input', () => renderFinancialLedgerRows(rows));
+        document.getElementById('ledgerTypeFilter')?.addEventListener('change', () => renderFinancialLedgerRows(rows));
+        openModal('financialLedgerModal');
+    }
+
+    function getLedgerActionHtml(row) {
+        if (row.kind === 'renewal') {
+            if (!row.canUndo) {
+                return '<span class="ledger-muted-action">آخر تجديد فقط</span>';
+            }
+            return `<button class="btn-icon ledger-undo-renewal-btn" data-id="${escapeAttr(row.renewalId)}" title="تراجع عن التجديد"><i class="fa-solid fa-rotate-left text-warning"></i></button>`;
+        }
+        if (row.kind === 'subscription') {
+            return `<button class="btn-icon ledger-delete-account-btn" data-id="${escapeAttr(row.accountId)}" title="حذف الاشتراك وملحقاته"><i class="fa-solid fa-trash text-danger"></i></button>`;
+        }
+        if (row.expenseId) {
+            return `<button class="btn-icon ledger-delete-expense-btn" data-id="${escapeAttr(row.expenseId)}" title="حذف المصروف"><i class="fa-solid fa-trash text-danger"></i></button>`;
+        }
+        return '<span class="ledger-muted-action">للعرض فقط</span>';
+    }
+
+    function renderFinancialLedgerRows(rows) {
+        const container = document.getElementById('ledgerRowsContainer');
+        if (!container) return;
+        const term = (document.getElementById('ledgerSearch')?.value || '').trim().toLowerCase();
+        const type = document.getElementById('ledgerTypeFilter')?.value || 'all';
+        const filteredRows = rows.filter(row => {
+            const matchesType = type === 'all' || row.kind === type;
+            const text = `${row.date} ${row.type} ${row.source} ${row.period} ${row.status}`.toLowerCase();
+            return matchesType && (!term || text.includes(term));
+        });
+
+        if (filteredRows.length === 0) {
+            container.innerHTML = '<div class="ledger-empty">لا توجد معاملات مطابقة.</div>';
+            return;
+        }
+
+        const fmt = (num) => Number(num || 0).toLocaleString('ar-EG');
+        container.innerHTML = `
             <table class="ledger-table">
                 <thead>
                     <tr>
@@ -1028,7 +1097,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     </tr>
                 </thead>
                 <tbody>
-                    ${rows.map(row => `
+                    ${filteredRows.map(row => `
                         <tr>
                             <td>${escapeHtml(row.date || '-')}</td>
                             <td>${escapeHtml(row.type)}</td>
@@ -1036,16 +1105,42 @@ document.addEventListener('DOMContentLoaded', () => {
                             <td>${escapeHtml(row.period)}</td>
                             <td><span class="${row.statusClass}">${escapeHtml(row.status)}</span></td>
                             <td class="${row.amount < 0 ? 'text-warning' : 'text-success'}">${row.amount < 0 ? '-' : ''}${fmt(Math.abs(row.amount))} ج.م</td>
-                            <td>${row.expenseId ? `<button class="btn-icon ledger-delete-expense-btn" data-id="${escapeAttr(row.expenseId)}" title="حذف المصروف"><i class="fa-solid fa-trash text-danger"></i></button>` : ''}</td>
+                            <td>${getLedgerActionHtml(row)}</td>
                         </tr>
                     `).join('')}
                 </tbody>
             </table>
+            <div class="ledger-card-list">
+                ${filteredRows.map(row => `
+                    <div class="ledger-card">
+                        <div class="ledger-card-head">
+                            <strong>${escapeHtml(row.type)}</strong>
+                            <span class="${row.amount < 0 ? 'text-warning' : 'text-success'}">${row.amount < 0 ? '-' : ''}${fmt(Math.abs(row.amount))} ج.م</span>
+                        </div>
+                        <div class="ledger-card-source">${escapeHtml(row.source)}</div>
+                        <div class="ledger-card-meta">
+                            <span>${escapeHtml(row.date || '-')}</span>
+                            <span>${escapeHtml(row.period)}</span>
+                            <span class="${row.statusClass}">${escapeHtml(row.status)}</span>
+                        </div>
+                        <div class="ledger-card-actions">${getLedgerActionHtml(row)}</div>
+                    </div>
+                `).join('')}
+            </div>
         `;
-        body.querySelectorAll('.ledger-delete-expense-btn').forEach(btn => {
+        bindLedgerActions(container);
+    }
+
+    function bindLedgerActions(container) {
+        container.querySelectorAll('.ledger-delete-expense-btn').forEach(btn => {
             btn.addEventListener('click', () => deletePlanExpenseFromUi(btn.dataset.id));
         });
-        openModal('financialLedgerModal');
+        container.querySelectorAll('.ledger-undo-renewal-btn').forEach(btn => {
+            btn.addEventListener('click', () => undoRenewalFromLedger(btn.dataset.id));
+        });
+        container.querySelectorAll('.ledger-delete-account-btn').forEach(btn => {
+            btn.addEventListener('click', () => deleteAccountCascadeFromLedger(btn.dataset.id));
+        });
     }
 
     const btnFinancialLedger = document.getElementById('btnFinancialLedger');
@@ -2251,6 +2346,63 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (error) {
             console.error('Failed to delete plan expense:', error);
             Swal.fire({ icon: 'error', title: 'تعذر حذف المصروف', text: 'حدث خطأ أثناء حذف مصروف الخطة.', background: '#111827', color: '#fff' });
+        }
+    }
+
+    async function undoRenewalFromLedger(renewalId) {
+        const result = await Swal.fire({
+            title: 'تراجع عن التجديد؟',
+            text: 'سيتم حذف آخر تجديد وإرجاع الاشتراك للفترة السابقة. لا يمكن التراجع إلا عن آخر تجديد للحفاظ على تسلسل الفترات.',
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonText: 'تراجع عن التجديد',
+            cancelButtonText: 'إلغاء',
+            confirmButtonColor: '#f59e0b',
+            background: '#111827',
+            color: '#fff'
+        });
+        if (!result.isConfirmed) return;
+
+        try {
+            await DataManager.undoRenewal(renewalId);
+            refreshAccountViews();
+            openFinancialLedger();
+            showToast('تم التراجع عن التجديد');
+        } catch (error) {
+            console.error('Failed to undo renewal:', error);
+            const message = error && error.message === 'Only latest renewal can be undone safely'
+                ? 'يمكن التراجع عن آخر تجديد فقط لهذا الاشتراك.'
+                : 'حدث خطأ أثناء التراجع عن التجديد.';
+            Swal.fire({ icon: 'error', title: 'تعذر التراجع', text: message, background: '#111827', color: '#fff' });
+        }
+    }
+
+    async function deleteAccountCascadeFromLedger(accountId) {
+        const account = DataManager.getAccounts().find(acc => acc.id === accountId);
+        if (!account) return;
+        const relatedRenewals = DataManager.getRenewalsForAccount(accountId).length;
+        const result = await Swal.fire({
+            title: 'حذف الاشتراك وملحقاته؟',
+            text: `سيتم حذف الاشتراك و ${relatedRenewals} تجديد مرتبط به، وأي مصروف خطة مسجل بسبب هذا الاشتراك فقط.`,
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonText: 'حذف الاشتراك',
+            cancelButtonText: 'إلغاء',
+            confirmButtonColor: '#ef4444',
+            background: '#111827',
+            color: '#fff'
+        });
+        if (!result.isConfirmed) return;
+
+        try {
+            await DataManager.deleteAccountCascade(accountId);
+            refreshAccountViews();
+            renderCustomers();
+            openFinancialLedger();
+            showToast('تم حذف الاشتراك وملحقاته');
+        } catch (error) {
+            console.error('Failed to delete account cascade:', error);
+            Swal.fire({ icon: 'error', title: 'تعذر الحذف', text: 'حدث خطأ أثناء حذف الاشتراك وملحقاته.', background: '#111827', color: '#fff' });
         }
     }
 

@@ -372,6 +372,18 @@ class DataManager {
     static getRenewalsForAccount(accountId) {
         return this.renewals.filter(r => r.accountId === accountId);
     }
+    static getRenewalById(id) {
+        return this.renewals.find(r => r.id === id) || null;
+    }
+    static getLatestRenewalForAccount(accountId) {
+        return this.getRenewalsForAccount(accountId)
+            .slice()
+            .sort((a, b) => {
+                const aDate = a.newPeriodStart || a.renewedAt || a.createdAt || '';
+                const bDate = b.newPeriodStart || b.renewedAt || b.createdAt || '';
+                return bDate.localeCompare(aDate);
+            })[0] || null;
+    }
 
     static parseAmount(value) {
         const amount = parseFloat(value);
@@ -531,6 +543,43 @@ class DataManager {
         if (!this.isFirebaseReady) return;
         const ref = window.firebaseApp.doc(window.firebaseApp.db, "accounts", id);
         await window.firebaseApp.deleteDoc(ref);
+    }
+
+    static async deleteAccountCascade(id) {
+        const previousAccounts = [...this.accounts];
+        const previousRenewals = [...this.renewals];
+        const previousPlanExpenses = [...this.planExpenses];
+        const relatedRenewals = this.renewals.filter(r => r.accountId === id);
+        const relatedExpenses = this.planExpenses.filter(expense => expense.sourceAccountId === id);
+
+        this.accounts = this.accounts.filter(a => a.id !== id);
+        this.renewals = this.renewals.filter(r => r.accountId !== id);
+        this.planExpenses = this.planExpenses.filter(expense => expense.sourceAccountId !== id);
+        localStorage.setItem(ACCOUNTS_KEY, JSON.stringify(this.accounts));
+        localStorage.setItem(RENEWALS_KEY, JSON.stringify(this.renewals));
+        localStorage.setItem(PLAN_EXPENSES_KEY, JSON.stringify(this.planExpenses));
+
+        if (!this.isFirebaseReady) return;
+
+        try {
+            const batch = window.firebaseApp.db.batch();
+            batch.delete(window.firebaseApp.doc(window.firebaseApp.db, "accounts", id));
+            relatedRenewals.forEach(renewal => {
+                if (renewal.id) batch.delete(window.firebaseApp.doc(window.firebaseApp.db, "renewals", renewal.id));
+            });
+            relatedExpenses.forEach(expense => {
+                if (expense.id) batch.delete(window.firebaseApp.doc(window.firebaseApp.db, "planExpenses", expense.id));
+            });
+            await batch.commit();
+        } catch (error) {
+            this.accounts = previousAccounts;
+            this.renewals = previousRenewals;
+            this.planExpenses = previousPlanExpenses;
+            localStorage.setItem(ACCOUNTS_KEY, JSON.stringify(this.accounts));
+            localStorage.setItem(RENEWALS_KEY, JSON.stringify(this.renewals));
+            localStorage.setItem(PLAN_EXPENSES_KEY, JSON.stringify(this.planExpenses));
+            throw error;
+        }
     }
 
     static async updateAccountPaid(id, isPaid) {
@@ -818,6 +867,83 @@ class DataManager {
             window.firebaseApp.collection(window.firebaseApp.db, "renewals"), record
         );
         return { id: docRef.id, ...record };
+    }
+
+    static async undoRenewal(renewalId) {
+        const renewal = this.getRenewalById(renewalId);
+        if (!renewal) throw new Error('Renewal not found');
+
+        const account = this.accounts.find(a => a.id === renewal.accountId);
+        if (!account) throw new Error('Related account not found');
+
+        const latest = this.getLatestRenewalForAccount(account.id);
+        if (!latest || latest.id !== renewalId) {
+            throw new Error('Only latest renewal can be undone safely');
+        }
+
+        const previousAccounts = [...this.accounts];
+        const previousRenewals = [...this.renewals];
+        const previousPlanExpenses = [...this.planExpenses];
+        const remainingRenewals = this.renewals.filter(r => r.id !== renewalId);
+        const samePlanPeriodRenewals = remainingRenewals.filter(r =>
+            r.servicePlanId === renewal.servicePlanId &&
+            r.newPeriodStart === renewal.newPeriodStart &&
+            r.newPeriodEnd === renewal.newPeriodEnd
+        );
+        const removableExpenses = samePlanPeriodRenewals.length === 0
+            ? this.planExpenses.filter(expense =>
+                expense.source === 'renewal' &&
+                expense.sourceAccountId === account.id &&
+                expense.planId === renewal.servicePlanId &&
+                expense.periodStart === renewal.newPeriodStart &&
+                expense.periodEnd === renewal.newPeriodEnd
+            )
+            : [];
+
+        const previousStart = renewal.previousPeriodStart || account.previousCurrentPeriodStart || account.previousStartDate || account.startDate || '';
+        const previousEnd = renewal.previousPeriodEnd || account.previousCurrentPeriodEnd || account.currentPeriodEnd || '';
+        const durationDays = previousStart && previousEnd ? this.daysBetween(previousStart, previousEnd) : (account.previousDurationDays || account.durationDays || 30);
+        const previousLatest = remainingRenewals
+            .filter(r => r.accountId === account.id)
+            .sort((a, b) => (b.newPeriodStart || b.renewedAt || '').localeCompare(a.newPeriodStart || a.renewedAt || ''))[0] || null;
+
+        const patch = {
+            startDate: previousStart,
+            durationDays,
+            currentPeriodStart: previousStart,
+            currentPeriodEnd: previousEnd,
+            nextBillingDate: this.getBillingCycleMonths(account.billingCycle) ? previousEnd : '',
+            isPaid: previousLatest ? previousLatest.isPaid === true : this.parseAmount(account.paidAmount) > 0,
+            renewalCount: Math.max(0, parseInt(account.renewalCount || 0) - 1),
+            lastRenewedAt: previousLatest ? (previousLatest.renewedAt || previousLatest.createdAt || null) : null
+        };
+
+        Object.assign(account, patch);
+        this.renewals = remainingRenewals;
+        this.planExpenses = this.planExpenses.filter(expense => !removableExpenses.some(removable => removable.id === expense.id));
+        localStorage.setItem(ACCOUNTS_KEY, JSON.stringify(this.accounts));
+        localStorage.setItem(RENEWALS_KEY, JSON.stringify(this.renewals));
+        localStorage.setItem(PLAN_EXPENSES_KEY, JSON.stringify(this.planExpenses));
+
+        if (!this.isFirebaseReady) return;
+
+        try {
+            const batch = window.firebaseApp.db.batch();
+            if (renewal.id) batch.delete(window.firebaseApp.doc(window.firebaseApp.db, "renewals", renewal.id));
+            batch.update(window.firebaseApp.doc(window.firebaseApp.db, "accounts", account.id), patch);
+            removableExpenses.forEach(expense => {
+                if (expense.id) batch.delete(window.firebaseApp.doc(window.firebaseApp.db, "planExpenses", expense.id));
+            });
+            await batch.commit();
+        } catch (error) {
+            this.accounts = previousAccounts;
+            this.renewals = previousRenewals;
+            this.planExpenses = previousPlanExpenses;
+            localStorage.setItem(ACCOUNTS_KEY, JSON.stringify(this.accounts));
+            localStorage.setItem(RENEWALS_KEY, JSON.stringify(this.renewals));
+            localStorage.setItem(PLAN_EXPENSES_KEY, JSON.stringify(this.planExpenses));
+            throw error;
+        }
     }
 
     static async renewMonthlyAccount(id, options = {}) {
