@@ -66,19 +66,38 @@ document.addEventListener('DOMContentLoaded', () => {
             const status = DataManager.getAccountStatus(acc).status;
             return !['closed', 'paused', 'cancelled'].includes(status);
         });
-        const expired = actionableAccounts.filter(acc => DataManager.getAccountStatus(acc).status === 'expired');
-        const warning = actionableAccounts.filter(acc => DataManager.getAccountStatus(acc).status === 'warning');
-        const needsReview = actionableAccounts.filter(acc => DataManager.getAccountStatus(acc).status === 'needs_review');
+        const renewalActionableAccounts = actionableAccounts.filter(acc => !isRenewalStopped(acc));
+        const expired = renewalActionableAccounts.filter(acc => DataManager.getAccountStatus(acc).status === 'expired');
+        const warningAll = renewalActionableAccounts.filter(acc => DataManager.getAccountStatus(acc).status === 'warning');
+        const urgentWarning = warningAll.filter(acc => {
+            const daysLeft = DataManager.getAccountStatus(acc).daysLeft;
+            return daysLeft !== null && daysLeft !== undefined && daysLeft <= 5;
+        });
+        const warning = warningAll.filter(acc => {
+            const daysLeft = DataManager.getAccountStatus(acc).daysLeft;
+            return daysLeft !== null && daysLeft !== undefined && daysLeft > 5;
+        });
+        const needsReview = renewalActionableAccounts.filter(acc => DataManager.getAccountStatus(acc).status === 'needs_review');
         const unpaid = actionableAccounts.filter(acc => acc.isPaid !== true);
-        const uniqueIds = new Set([...expired, ...warning, ...needsReview, ...unpaid].map(acc => acc.id));
+        const urgent = [...expired, ...needsReview, ...urgentWarning];
+        const uniqueIds = new Set([...urgent, ...warning, ...unpaid].map(acc => acc.id));
         return {
-            urgent: [...expired, ...needsReview],
+            urgent,
             expired,
             warning,
+            urgentWarning,
             needsReview,
             unpaid,
             total: uniqueIds.size
         };
+    }
+
+    function isRenewalStopped(acc) {
+        return acc && (
+            acc.renewalIntent === 'cancel_at_period_end' ||
+            acc.cancelAtPeriodEnd === true ||
+            acc.autoRenew === false
+        );
     }
 
     function updateHeaderNotificationBadge(groups = buildFollowUpNotificationGroups()) {
@@ -88,8 +107,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const total = groups.total;
         button.classList.toggle('has-alerts', total > 0);
-        button.classList.toggle('has-expired', groups.expired.length > 0);
-        button.classList.toggle('has-warning', groups.expired.length === 0 && groups.warning.length > 0);
+        button.classList.toggle('has-expired', groups.urgent.length > 0);
+        button.classList.toggle('has-warning', groups.urgent.length === 0 && groups.warning.length > 0);
 
         if (total === 0) {
             badge.style.display = 'none';
@@ -1170,12 +1189,13 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!center || !activeList) return;
 
         const groups = buildFollowUpNotificationGroups(accounts);
+        const urgentAccounts = groups.urgent || [];
         const warningAccounts = groups.warning;
         const expiredAccounts = groups.expired;
         const reviewAccounts = groups.needsReview || [];
         const unpaidAccounts = groups.unpaid;
         const seen = new Set();
-        const previewItems = [...expiredAccounts, ...reviewAccounts, ...warningAccounts, ...unpaidAccounts]
+        const previewItems = [...urgentAccounts, ...warningAccounts, ...unpaidAccounts]
             .filter(acc => {
                 if (seen.has(acc.id)) return false;
                 seen.add(acc.id);
@@ -1183,8 +1203,13 @@ document.addEventListener('DOMContentLoaded', () => {
             })
             .slice(0, 3);
 
+        const urgentCountEl = document.getElementById('followup-expired-count');
+        if (urgentCountEl && urgentCountEl.parentElement) {
+            const labelNode = Array.from(urgentCountEl.parentElement.childNodes).find(node => node.nodeType === Node.TEXT_NODE);
+            if (labelNode) labelNode.textContent = 'عاجلة ';
+        }
         document.getElementById('followup-warning-count').textContent = warningAccounts.length;
-        document.getElementById('followup-expired-count').textContent = expiredAccounts.length + reviewAccounts.length;
+        document.getElementById('followup-expired-count').textContent = urgentAccounts.length;
         document.getElementById('followup-unpaid-count').textContent = unpaidAccounts.length;
 
         center.classList.toggle('is-empty', previewItems.length === 0);
@@ -1220,6 +1245,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const canMarkPaid = !isPaid;
             const canInvoice = acc.revenue !== undefined && acc.revenue !== null && acc.revenue !== '' && !Number.isNaN(Number(acc.revenue));
             const isMonthly = acc.billingCycle === 'monthly';
+            const renewalStopped = isRenewalStopped(acc);
             const overlapBadge = groupType === 'unpaid' && (statusInfo.status === 'expired' || statusInfo.status === 'warning' || statusInfo.status === 'needs_review')
                 ? `<span class="followup-overlap-badge status-${statusInfo.status}">${statusInfo.status === 'expired' ? 'منتهي' : statusInfo.status === 'needs_review' ? 'يحتاج مراجعة' : 'قارب على الانتهاء'}</span>`
                 : '';
@@ -1238,8 +1264,10 @@ document.addEventListener('DOMContentLoaded', () => {
                     </div>
                 </div>
                 <div class="followup-actions">
-                    ${isMonthly ? `<button class="btn-icon followup-renew-monthly-btn" data-id="${escapeAttr(acc.id)}" title="تجديد شهري"><i class="fa-solid fa-calendar-plus text-success"></i></button>` : ''}
-                    ${!isMonthly ? `<button class="btn-icon followup-renew-btn" data-id="${escapeAttr(acc.id)}" title="تجديد"><i class="fa-solid fa-rotate-right text-primary"></i></button>` : ''}
+                    ${!renewalStopped && isMonthly ? `<button class="btn-icon followup-renew-monthly-btn" data-id="${escapeAttr(acc.id)}" title="تجديد شهري"><i class="fa-solid fa-calendar-plus text-success"></i></button>` : ''}
+                    ${!renewalStopped && !isMonthly ? `<button class="btn-icon followup-renew-btn" data-id="${escapeAttr(acc.id)}" title="تجديد"><i class="fa-solid fa-rotate-right text-primary"></i></button>` : ''}
+                    ${!renewalStopped ? `<button class="btn-icon followup-cancel-renewal-btn" data-id="${escapeAttr(acc.id)}" title="لن يجدد بنهاية الفترة"><i class="fa-solid fa-calendar-xmark text-warning"></i></button>` : ''}
+                    ${renewalStopped ? `<button class="btn-icon followup-restore-renewal-btn" data-id="${escapeAttr(acc.id)}" title="إعادة التجديد"><i class="fa-solid fa-calendar-check text-success"></i></button>` : ''}
                     ${canClose ? `<button class="btn-icon followup-close-btn" data-id="${escapeAttr(acc.id)}" title="إغلاق"><i class="fa-solid fa-circle-stop text-danger"></i></button>` : ''}
                     ${phone ? `<button class="btn-icon followup-whatsapp-btn" data-id="${escapeAttr(acc.id)}" title="واتساب"><i class="fa-brands fa-whatsapp text-success"></i></button>` : ''}
                     ${canInvoice ? `<button class="btn-icon followup-invoice-btn" data-id="${escapeAttr(acc.id)}" title="فاتورة"><i class="fa-solid fa-file-invoice-dollar text-warning"></i></button>` : ''}
@@ -1342,13 +1370,46 @@ document.addEventListener('DOMContentLoaded', () => {
         row.className = 'subscription-payment-row';
         revenueInput.parentNode.insertBefore(row, revenueInput);
         row.appendChild(revenueInput);
+
+        const paidAmountInput = document.createElement('input');
+        paidAmountInput.type = 'number';
+        paidAmountInput.id = 'accPaidAmount';
+        paidAmountInput.className = 'form-control paid-amount-input';
+        paidAmountInput.min = '0';
+        paidAmountInput.step = '0.01';
+        paidAmountInput.placeholder = 'المدفوع فعليًا';
+        paidAmountInput.title = 'المبلغ المدفوع فعليًا';
+        row.appendChild(paidAmountInput);
+
         paidLabel.classList.add('inline-payment-toggle');
         row.appendChild(paidLabel);
         revenueGroup.classList.add('full-width', 'compact-payment-group');
         paidGroup.remove();
+
+        const syncPaidAmount = () => {
+            if (paidInput.checked) {
+                if (!paidAmountInput.value || Number(paidAmountInput.value) <= 0) {
+                    paidAmountInput.value = revenueInput.value || 0;
+                }
+            } else {
+                paidAmountInput.value = 0;
+            }
+        };
+        paidInput.addEventListener('change', syncPaidAmount);
+        revenueInput.addEventListener('change', () => {
+            if (paidInput.checked && (!paidAmountInput.value || Number(paidAmountInput.value) <= 0)) {
+                paidAmountInput.value = revenueInput.value || 0;
+            }
+        });
     }
 
     compactAccountPaymentFields();
+
+    function setAccountPaidAmount(value) {
+        const paidAmountInput = document.getElementById('accPaidAmount');
+        if (paidAmountInput) paidAmountInput.value = value ?? 0;
+    }
+
     enhanceWorkflowModals();
 
     function enhanceWorkflowModals() {
@@ -1556,6 +1617,12 @@ document.addEventListener('DOMContentLoaded', () => {
         });
         container.querySelectorAll('.followup-close-btn').forEach(btn => {
             btn.addEventListener('click', () => closeAccountFromUi(btn.dataset.id));
+        });
+        container.querySelectorAll('.followup-cancel-renewal-btn').forEach(btn => {
+            btn.addEventListener('click', () => cancelRenewalAtPeriodEndFromUi(btn.dataset.id));
+        });
+        container.querySelectorAll('.followup-restore-renewal-btn').forEach(btn => {
+            btn.addEventListener('click', () => restoreRenewalIntentFromUi(btn.dataset.id));
         });
         container.querySelectorAll('.followup-whatsapp-btn').forEach(btn => {
             btn.addEventListener('click', () => openWhatsAppAccount(btn.dataset.id));
@@ -2328,6 +2395,9 @@ document.addEventListener('DOMContentLoaded', () => {
             accum.unpaid += financials.unpaidAmount || 0;
             return accum;
         }, { billed: 0, paid: 0, unpaid: 0 });
+        const planCost = selectedPlan ? DataManager.getPlanCost(selectedPlan) : 0;
+        const netCollected = totals.paid - planCost;
+        const netClass = netCollected >= 0 ? 'success' : 'danger';
 
         summary.style.display = '';
         summary.innerHTML = `
@@ -2345,16 +2415,24 @@ document.addEventListener('DOMContentLoaded', () => {
                     <strong>${uniqueCustomers.size.toLocaleString('ar-EG')}</strong>
                 </div>
                 <div class="accounts-plan-summary-card">
-                    <small>إجمالي المستحق</small>
+                    <small>تكلفة الخطة عليك</small>
+                    <strong>${Number(planCost).toLocaleString('ar-EG')} ج.م</strong>
+                </div>
+                <div class="accounts-plan-summary-card">
+                    <small>مستحق من الأعضاء</small>
                     <strong>${Number(totals.billed).toLocaleString('ar-EG')} ج.م</strong>
                 </div>
                 <div class="accounts-plan-summary-card success">
-                    <small>إجمالي المدفوع</small>
+                    <small>محصل من الأعضاء</small>
                     <strong>${Number(totals.paid).toLocaleString('ar-EG')} ج.م</strong>
                 </div>
                 <div class="accounts-plan-summary-card danger">
                     <small>غير المسدد</small>
                     <strong>${Number(totals.unpaid).toLocaleString('ar-EG')} ج.م</strong>
+                </div>
+                <div class="accounts-plan-summary-card ${netClass}">
+                    <small>صافي المحصل</small>
+                    <strong>${netCollected >= 0 ? '+' : ''}${Number(netCollected).toLocaleString('ar-EG')} ج.م</strong>
                 </div>
             </div>
         `;
@@ -2422,9 +2500,12 @@ document.addEventListener('DOMContentLoaded', () => {
             const accCycle = acc.billingCycle || 'custom';
             const isMonthly = accCycle === 'monthly';
             const isFollowedLifecycle = ['active', 'warning', 'expired'].includes(statusInfo.status);
+            const renewalStopped = isRenewalStopped(acc);
             const lifecycleButtons = `
-                ${isFollowedLifecycle && isMonthly ? `<button class="btn-icon btn-action-pill text-success renew-monthly-acc-btn" data-id="${acc.id}" title="تجديد شهري"><i class="fa-solid fa-calendar-plus"></i><span>تجديد</span></button>` : ''}
-                ${isFollowedLifecycle && !isMonthly ? `<button class="btn-icon btn-action-pill text-primary renew-acc-btn" data-id="${acc.id}" title="تجديد"><i class="fa-solid fa-rotate-right"></i><span>تجديد</span></button>` : ''}
+                ${isFollowedLifecycle && !renewalStopped && isMonthly ? `<button class="btn-icon btn-action-pill text-success renew-monthly-acc-btn" data-id="${acc.id}" title="تجديد شهري"><i class="fa-solid fa-calendar-plus"></i><span>تجديد</span></button>` : ''}
+                ${isFollowedLifecycle && !renewalStopped && !isMonthly ? `<button class="btn-icon btn-action-pill text-primary renew-acc-btn" data-id="${acc.id}" title="تجديد"><i class="fa-solid fa-rotate-right"></i><span>تجديد</span></button>` : ''}
+                ${isFollowedLifecycle && !renewalStopped ? `<button class="btn-icon text-warning cancel-renewal-acc-btn" data-id="${acc.id}" title="لن يجدد بنهاية الفترة"><i class="fa-solid fa-calendar-xmark"></i></button>` : ''}
+                ${isFollowedLifecycle && renewalStopped ? `<button class="btn-icon text-success restore-renewal-acc-btn" data-id="${acc.id}" title="إعادة التجديد"><i class="fa-solid fa-calendar-check"></i></button>` : ''}
                 ${isFollowedLifecycle ? `<button class="btn-icon text-warning pause-acc-btn" data-id="${acc.id}" title="إيقاف مؤقت"><i class="fa-solid fa-pause"></i></button>` : ''}
                 ${isFollowedLifecycle || statusInfo.status === 'paused' ? `<button class="btn-icon text-danger cancel-acc-btn" data-id="${acc.id}" title="إلغاء الاشتراك"><i class="fa-solid fa-ban"></i></button>` : ''}
                 ${statusInfo.status === 'paused' || statusInfo.status === 'cancelled' ? `<button class="btn-icon text-success reactivate-acc-btn" data-id="${acc.id}" title="إعادة تفعيل"><i class="fa-solid fa-play"></i></button>` : ''}
@@ -2486,7 +2567,10 @@ document.addEventListener('DOMContentLoaded', () => {
                     <div style="font-family:monospace;user-select:text;font-size:0.85rem;">${escapeHtml(acc.activationCode || '-')}</div>
                     <div class="text-muted" style="font-size:0.78rem">${escapeHtml(acc.notes ? (acc.notes.length > 30 ? acc.notes.substring(0, 30) + '...' : acc.notes) : '')}</div>
                 </td>
-                <td data-label="الحالة"><span class="status-badge status-${statusInfo.status}">${statusInfo.label}</span></td>
+                <td data-label="الحالة">
+                    <span class="status-badge status-${statusInfo.status}">${statusInfo.label}</span>
+                    ${renewalStopped ? '<span class="status-badge no-renewal-badge">لن يجدد</span>' : ''}
+                </td>
                 <td data-label="إجراءات">
                     <div class="actions-cell">
                         <button class="btn-icon edit-acc-btn" data-id="${acc.id}" title="تعديل"><i class="fa-solid fa-pen text-info"></i></button>
@@ -2519,6 +2603,12 @@ document.addEventListener('DOMContentLoaded', () => {
         });
         tableBody.querySelectorAll('.pause-acc-btn').forEach(btn => {
             btn.addEventListener('click', () => pauseAccountFromUi(btn.dataset.id));
+        });
+        tableBody.querySelectorAll('.cancel-renewal-acc-btn').forEach(btn => {
+            btn.addEventListener('click', () => cancelRenewalAtPeriodEndFromUi(btn.dataset.id));
+        });
+        tableBody.querySelectorAll('.restore-renewal-acc-btn').forEach(btn => {
+            btn.addEventListener('click', () => restoreRenewalIntentFromUi(btn.dataset.id));
         });
         tableBody.querySelectorAll('.cancel-acc-btn').forEach(btn => {
             btn.addEventListener('click', () => cancelAccountFromUi(btn.dataset.id));
@@ -2640,6 +2730,26 @@ document.addEventListener('DOMContentLoaded', () => {
         renderAccounts();
         checkNotifications();
         if (document.getElementById('view-dashboard').classList.contains('active')) renderDashboard();
+        if (document.getElementById('view-plans').classList.contains('active')) renderPlans();
+    }
+
+    function getPlanCycleExpensePrompt(acc, periodStart, periodEnd) {
+        const plan = acc && acc.servicePlanId ? DataManager.getServicePlanById(acc.servicePlanId) : null;
+        const amount = plan ? DataManager.getPlanCycleCost(plan) : 0;
+        const alreadyRegistered = plan ? DataManager.hasPlanExpenseForPeriod(plan.id, periodStart, periodEnd) : false;
+        return { plan, amount, alreadyRegistered, canRegister: !!plan && amount > 0 && !alreadyRegistered };
+    }
+
+    function renderPlanExpensePrompt(promptData) {
+        if (!promptData.plan || promptData.amount <= 0) return '';
+        if (promptData.alreadyRegistered) {
+            return `<div class="swal-inline-note">تم تسجيل تكلفة دورة الخطة لهذه الفترة من قبل.</div>`;
+        }
+        return `
+            <label style="display:block;margin-top:0.75rem;">
+                <input type="checkbox" id="renewRegisterPlanExpense" checked style="margin-left:0.4rem;">
+                تسجيل تكلفة دورة الخطة (${Number(promptData.amount).toLocaleString('ar-EG')} ج.م)
+            </label>`;
     }
 
     async function pauseAccountFromUi(id) {
@@ -2667,6 +2777,63 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (error) {
             console.error('Failed to pause account:', error);
             Swal.fire({ icon: 'error', title: 'تعذر الإيقاف', text: 'حدث خطأ أثناء تحديث الاشتراك.', background: '#111827', color: '#fff' });
+        }
+    }
+
+    async function cancelRenewalAtPeriodEndFromUi(id) {
+        const acc = DataManager.getAccounts().find(a => a.id === id);
+        if (!acc) return;
+
+        const period = DataManager.getAccountPeriod(acc);
+        const result = await Swal.fire({
+            title: 'إيقاف التجديد؟',
+            text: `سيظل الاشتراك نشطًا حتى ${period.endDate || 'نهاية مدته'}، لكنه لن يظهر كتجديد مطلوب.`,
+            input: 'textarea',
+            inputPlaceholder: 'سبب عدم التجديد (اختياري)',
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonText: 'لن يجدد',
+            cancelButtonText: 'رجوع',
+            background: '#111827',
+            color: '#fff'
+        });
+
+        if (!result.isConfirmed) return;
+
+        try {
+            await DataManager.cancelRenewalAtPeriodEnd(id, result.value || '');
+            refreshAccountViews();
+            showToast('تم تحديد الاشتراك: لن يجدد بنهاية الفترة');
+        } catch (error) {
+            console.error('Failed to cancel renewal intent:', error);
+            Swal.fire({ icon: 'error', title: 'تعذر تحديث التجديد', text: 'حدث خطأ أثناء تحديث حالة التجديد.', background: '#111827', color: '#fff' });
+        }
+    }
+
+    async function restoreRenewalIntentFromUi(id) {
+        const acc = DataManager.getAccounts().find(a => a.id === id);
+        if (!acc) return;
+
+        const result = await Swal.fire({
+            title: 'إعادة التجديد؟',
+            text: 'سيعود الاشتراك للظهور في المتابعة عند قرب نهاية الفترة.',
+            icon: 'question',
+            showCancelButton: true,
+            confirmButtonText: 'إعادة التجديد',
+            cancelButtonText: 'إلغاء',
+            background: '#111827',
+            color: '#fff'
+        });
+
+        if (!result.isConfirmed) return;
+
+        try {
+            await DataManager.restoreRenewalIntent(id);
+            refreshAccountViews();
+            showToast('تمت إعادة التجديد للاشتراك');
+        } catch (error) {
+            console.error('Failed to restore renewal intent:', error);
+            Swal.fire({ icon: 'error', title: 'تعذر تحديث التجديد', text: 'حدث خطأ أثناء تحديث حالة التجديد.', background: '#111827', color: '#fff' });
         }
     }
 
@@ -2779,6 +2946,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const today = new Date().toISOString().split('T')[0];
         const currentDuration = parseInt(acc.durationDays || 30);
+        const defaultEndDate = addDaysToDate(today, currentDuration);
+        const planExpensePrompt = getPlanCycleExpensePrompt(acc, today, defaultEndDate);
         const result = await Swal.fire({
             title: 'تجديد الاشتراك',
             html: `
@@ -2786,7 +2955,16 @@ document.addEventListener('DOMContentLoaded', () => {
                     <label style="display:block;text-align:right;margin-bottom:0.35rem;">تاريخ البداية الجديد</label>
                     <input type="date" id="renewStartDate" class="swal2-input" value="${today}" style="width:100%;margin:0 0 0.75rem;">
                     <label style="display:block;text-align:right;margin-bottom:0.35rem;">المدة بالأيام</label>
-                    <input type="number" id="renewDurationDays" class="swal2-input" value="${currentDuration}" min="1" style="width:100%;margin:0;">
+                    <input type="number" id="renewDurationDays" class="swal2-input" value="${currentDuration}" min="1" style="width:100%;margin:0 0 0.75rem;">
+                    <label style="display:block;text-align:right;margin-bottom:0.35rem;">مبلغ الفاتورة</label>
+                    <input type="number" id="renewAmount" class="swal2-input" value="${Number(acc.revenue || 0)}" min="0" step="0.01" style="width:100%;margin:0 0 0.75rem;">
+                    <label style="display:block;margin:0.25rem 0 0.5rem;">
+                        <input type="checkbox" id="renewPaid" style="margin-left:0.4rem;">
+                        تم السداد
+                    </label>
+                    <label style="display:block;text-align:right;margin-bottom:0.35rem;">المدفوع فعليًا</label>
+                    <input type="number" id="renewPaidAmount" class="swal2-input" value="0" min="0" step="0.01" style="width:100%;margin:0;">
+                    ${renderPlanExpensePrompt(planExpensePrompt)}
                 </div>
             `,
             showCancelButton: true,
@@ -2794,6 +2972,16 @@ document.addEventListener('DOMContentLoaded', () => {
             cancelButtonText: 'إلغاء',
             background: '#111827',
             color: '#fff',
+            didOpen: () => {
+                const paidCheck = document.getElementById('renewPaid');
+                const amountInput = document.getElementById('renewAmount');
+                const paidAmountInput = document.getElementById('renewPaidAmount');
+                if (paidCheck && amountInput && paidAmountInput) {
+                    paidCheck.addEventListener('change', () => {
+                        paidAmountInput.value = paidCheck.checked ? (amountInput.value || 0) : 0;
+                    });
+                }
+            },
             preConfirm: () => {
                 const startDate = document.getElementById('renewStartDate').value;
                 const durationDays = parseInt(document.getElementById('renewDurationDays').value);
@@ -2801,7 +2989,15 @@ document.addEventListener('DOMContentLoaded', () => {
                     Swal.showValidationMessage('يرجى إدخال تاريخ ومدة صحيحة');
                     return false;
                 }
-                return { startDate, durationDays };
+                return {
+                    startDate,
+                    durationDays,
+                    amount: parseFloat(document.getElementById('renewAmount').value) || 0,
+                    isPaid: document.getElementById('renewPaid').checked,
+                    paidAmount: parseFloat(document.getElementById('renewPaidAmount').value) || 0,
+                    registerPlanExpense: document.getElementById('renewRegisterPlanExpense')?.checked === true,
+                    planExpenseAmount: planExpensePrompt.amount
+                };
             }
         });
 
@@ -2809,9 +3005,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         try {
             await DataManager.renewAccount(id, result.value);
-            renderAccounts();
-            checkNotifications();
-            if (document.getElementById('view-dashboard').classList.contains('active')) renderDashboard();
+            refreshAccountViews();
             showToast('تم تجديد الاشتراك بنجاح');
         } catch (error) {
             console.error('Failed to renew account:', error);
@@ -2827,6 +3021,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const period = DataManager.getAccountPeriod(acc);
         const newStart = period.endDate || new Date().toISOString().split('T')[0];
         const newEnd = DataManager.addCalendarMonths(newStart, 1);
+        const planExpensePrompt = getPlanCycleExpensePrompt(acc, newStart, newEnd);
 
         const result = await Swal.fire({
             title: 'تجديد شهري',
@@ -2838,6 +3033,11 @@ document.addEventListener('DOMContentLoaded', () => {
                         <input type="checkbox" id="renewMonthlyPaid" style="margin-left:0.4rem;">
                         تم السداد
                     </label>
+                    <label style="display:block;margin-top:0.75rem;">مبلغ الفاتورة</label>
+                    <input type="number" id="renewMonthlyAmount" class="swal2-input" min="0" step="0.01" value="${Number(acc.revenue || 0)}" style="width:100%;margin:0 0 0.5rem;">
+                    <label style="display:block;">المدفوع فعليًا</label>
+                    <input type="number" id="renewMonthlyPaidAmount" class="swal2-input" min="0" step="0.01" value="0" style="width:100%;margin:0;">
+                    ${renderPlanExpensePrompt(planExpensePrompt)}
                 </div>
             `,
             showCancelButton: true,
@@ -2845,11 +3045,24 @@ document.addEventListener('DOMContentLoaded', () => {
             cancelButtonText: 'إلغاء',
             background: '#111827',
             color: '#fff',
+            didOpen: () => {
+                const paidCheck = document.getElementById('renewMonthlyPaid');
+                const amountInput = document.getElementById('renewMonthlyAmount');
+                const paidAmountInput = document.getElementById('renewMonthlyPaidAmount');
+                if (paidCheck && amountInput && paidAmountInput) {
+                    paidCheck.addEventListener('change', () => {
+                        paidAmountInput.value = paidCheck.checked ? (amountInput.value || 0) : 0;
+                    });
+                }
+            },
             preConfirm: () => ({
                 startDate: newStart,
                 endDate: newEnd,
                 isPaid: document.getElementById('renewMonthlyPaid').checked,
-                amount: acc.revenue || 0
+                amount: parseFloat(document.getElementById('renewMonthlyAmount').value) || 0,
+                paidAmount: parseFloat(document.getElementById('renewMonthlyPaidAmount').value) || 0,
+                registerPlanExpense: document.getElementById('renewRegisterPlanExpense')?.checked === true,
+                planExpenseAmount: planExpensePrompt.amount
             })
         });
 
@@ -2858,9 +3071,7 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             window.renewingMonthlyIds[id] = true;
             await DataManager.renewMonthlyAccount(id, result.value);
-            renderAccounts();
-            checkNotifications();
-            if (document.getElementById('view-dashboard').classList.contains('active')) renderDashboard();
+            refreshAccountViews();
             showToast('تم تجديد الاشتراك الشهري بنجاح');
         } catch (error) {
             console.error('Failed to renew monthly account:', error);
@@ -3401,6 +3612,7 @@ document.addEventListener('DOMContentLoaded', () => {
         accountEndDateManuallyEdited = false;
         syncAccountEndDateFromDuration(false);
         document.getElementById('accRevenue').value = 0;
+        setAccountPaidAmount(0);
         document.getElementById('accRefund').value = 0;
         const billingCycleSelect = document.getElementById('accBillingCycle');
         if (billingCycleSelect) billingCycleSelect.value = 'custom';
@@ -3441,6 +3653,7 @@ document.addEventListener('DOMContentLoaded', () => {
         accountEndDateManuallyEdited = false;
         syncAccountEndDateFromDuration(false);
         document.getElementById('accRevenue').value = 0;
+        setAccountPaidAmount(0);
         document.getElementById('accRefund').value = 0;
         const billingCycleSelect = document.getElementById('accBillingCycle');
         if (billingCycleSelect) billingCycleSelect.value = 'custom';
@@ -3501,6 +3714,11 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         const isPaidCheck = document.getElementById('accIsPaid');
+        const paidAmountInput = document.getElementById('accPaidAmount');
+        const isPaid = isPaidCheck ? isPaidCheck.checked : false;
+        const paidAmount = paidAmountInput
+            ? (isPaid ? (paidAmountInput.value || revenue || 0) : (paidAmountInput.value || 0))
+            : (isPaid ? revenue : 0);
         const accId = document.getElementById('accId').value;
         const selectedPlanIds = getSelectedPlanIds();
         const billingCycle = document.getElementById('accBillingCycle') ? document.getElementById('accBillingCycle').value : 'custom';
@@ -3517,7 +3735,8 @@ document.addEventListener('DOMContentLoaded', () => {
             refund: document.getElementById('accRefund').value || '0',
             activationCode: document.getElementById('accActivationCode').value.trim(),
             notes: document.getElementById('accNotes').value.trim(),
-            isPaid: isPaidCheck ? isPaidCheck.checked : false,
+            isPaid,
+            paidAmount,
             billingCycle: billingFields.billingCycle,
             recurringEnabled: billingFields.recurringEnabled,
             currentPeriodStart: billingFields.currentPeriodStart,
@@ -3597,6 +3816,7 @@ document.addEventListener('DOMContentLoaded', () => {
         accountEndDateManuallyEdited = !!acc.currentPeriodEnd;
         syncAccountDurationFromEndDate();
         document.getElementById('accRevenue').value = acc.revenue || 0;
+        setAccountPaidAmount(acc.paidAmount !== undefined && acc.paidAmount !== null && acc.paidAmount !== '' ? acc.paidAmount : (acc.isPaid === true ? acc.revenue || 0 : 0));
         document.getElementById('accRefund').value = acc.refund || 0;
         document.getElementById('accActivationCode').value = acc.activationCode || '';
         document.getElementById('accNotes').value = acc.notes || '';

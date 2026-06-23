@@ -1420,7 +1420,7 @@ h6 {
 
 .accounts-plan-summary-grid {
     display: grid;
-    grid-template-columns: repeat(5, minmax(0, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(135px, 1fr));
     gap: 0.55rem;
 }
 
@@ -1585,6 +1585,23 @@ h6 {
     background: rgba(100, 116, 139, 0.18);
     color: #cbd5e1;
     border: 1px solid rgba(100, 116, 139, 0.34);
+}
+
+.no-renewal-badge {
+    margin-top: 0.3rem;
+    background: rgba(245, 158, 11, 0.1);
+    color: var(--warning-color);
+    border: 1px solid rgba(245, 158, 11, 0.28);
+}
+
+.swal-inline-note {
+    margin-top: 0.75rem;
+    padding: 0.55rem 0.7rem;
+    border-radius: var(--radius-md);
+    border: 1px solid rgba(99, 102, 241, 0.22);
+    background: rgba(99, 102, 241, 0.08);
+    color: var(--text-secondary);
+    font-size: 0.86rem;
 }
 
 .billing-cycle-badge {
@@ -2052,13 +2069,17 @@ h6 {
 
 .subscription-payment-row {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
     gap: 0.55rem;
     align-items: stretch;
 }
 
 .subscription-payment-row .form-control {
     min-width: 0;
+}
+
+.paid-amount-input {
+    border-color: rgba(16, 185, 129, 0.25);
 }
 
 .payment-toggle-label {
@@ -2577,6 +2598,10 @@ textarea.form-control {
     .modal-form-panel-grid {
         grid-template-columns: 1fr;
         gap: 0.8rem;
+    }
+
+    .subscription-payment-row {
+        grid-template-columns: 1fr;
     }
 
     .platforms-grid {

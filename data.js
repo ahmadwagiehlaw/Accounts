@@ -178,6 +178,34 @@ class DataManager {
     static getPlanExpensesTotal(planId) {
         return this.getPlanExpenses(planId).reduce((sum, expense) => sum + this.parseAmount(expense.amount), 0);
     }
+    static getPlanCycleCost(plan) {
+        return this.parseAmount(plan && plan.registrationCost);
+    }
+    static hasPlanExpenseForPeriod(planId, periodStart, periodEnd) {
+        if (!planId || !periodStart || !periodEnd) return false;
+        return this.planExpenses.some(expense =>
+            expense.planId === planId &&
+            expense.periodStart === periodStart &&
+            expense.periodEnd === periodEnd
+        );
+    }
+    static buildPlanCycleExpense(plan, options = {}) {
+        if (!plan || !options.periodStart || !options.periodEnd) return null;
+        const amount = this.parseAmount(options.amount !== undefined ? options.amount : this.getPlanCycleCost(plan));
+        if (amount <= 0) return null;
+        if (this.hasPlanExpenseForPeriod(plan.id, options.periodStart, options.periodEnd)) return null;
+        return {
+            planId: plan.id,
+            platformId: plan.platformId || '',
+            amount,
+            periodStart: options.periodStart,
+            periodEnd: options.periodEnd,
+            paidAt: options.paidAt || new Date().toISOString().split('T')[0],
+            note: options.note || 'تكلفة دورة الخطة عند التجديد',
+            source: options.source || 'renewal',
+            sourceAccountId: options.sourceAccountId || ''
+        };
+    }
     static getPlanCost(plan) {
         if (!plan) return 0;
         const expensesTotal = this.getPlanExpensesTotal(plan.id);
@@ -357,6 +385,11 @@ class DataManager {
         const period = this.getAccountPeriod(account);
         const entries = [];
         const initialAmount = this.parseAmount(account.revenue);
+        const hasInitialPaidAmount = account.paidAmount !== undefined && account.paidAmount !== null && account.paidAmount !== '';
+        const initialIsPaid = renewals.length > 0 ? true : account.isPaid === true;
+        const initialPaidAmount = hasInitialPaidAmount
+            ? this.parseAmount(account.paidAmount)
+            : (initialIsPaid ? initialAmount : 0);
 
         entries.push({
             id: `${account.id || 'account'}_initial`,
@@ -364,19 +397,26 @@ class DataManager {
             accountId: account.id || '',
             servicePlanId: account.servicePlanId || '',
             amount: initialAmount,
-            isPaid: renewals.length > 0 ? true : account.isPaid === true,
+            paidAmount: initialPaidAmount,
+            isPaid: initialIsPaid,
             periodStart: account.previousStartDate || account.startDate || period.startDate || '',
             periodEnd: account.previousPeriodEnd || account.previousCurrentPeriodEnd || period.endDate || '',
             createdAt: account.createdAt || ''
         });
 
         renewals.forEach(renewal => {
+            const renewalAmount = this.parseAmount(renewal.amount !== undefined ? renewal.amount : account.revenue);
+            const hasRenewalPaidAmount = renewal.paidAmount !== undefined && renewal.paidAmount !== null && renewal.paidAmount !== '';
+            const renewalPaidAmount = hasRenewalPaidAmount
+                ? this.parseAmount(renewal.paidAmount)
+                : (renewal.isPaid === true ? renewalAmount : 0);
             entries.push({
                 id: renewal.id || '',
                 type: 'renewal',
                 accountId: renewal.accountId || account.id || '',
                 servicePlanId: renewal.servicePlanId || account.servicePlanId || '',
-                amount: this.parseAmount(renewal.amount !== undefined ? renewal.amount : account.revenue),
+                amount: renewalAmount,
+                paidAmount: renewalPaidAmount,
                 isPaid: renewal.isPaid === true,
                 periodStart: renewal.newPeriodStart || renewal.currentPeriodStart || '',
                 periodEnd: renewal.newPeriodEnd || renewal.currentPeriodEnd || '',
@@ -394,7 +434,12 @@ class DataManager {
     static getAccountFinancials(account) {
         const entries = this.getAccountBillingEntries(account);
         const billedAmount = entries.reduce((sum, entry) => sum + this.parseAmount(entry.amount), 0);
-        const paidAmount = entries.reduce((sum, entry) => entry.isPaid ? sum + this.parseAmount(entry.amount) : sum, 0);
+        const paidAmount = entries.reduce((sum, entry) => {
+            if (entry.paidAmount !== undefined && entry.paidAmount !== null && entry.paidAmount !== '') {
+                return sum + this.parseAmount(entry.paidAmount);
+            }
+            return entry.isPaid ? sum + this.parseAmount(entry.amount) : sum;
+        }, 0);
         const refundAmount = this.parseAmount(account && account.refund);
         const unpaidAmount = Math.max(0, billedAmount - paidAmount);
 
@@ -491,11 +536,15 @@ class DataManager {
     static async updateAccountPaid(id, isPaid) {
         // Optimistic local update
         const acc = this.accounts.find(a => a.id === id);
-        if (acc) acc.isPaid = isPaid;
+        const paidAmount = isPaid && acc ? this.parseAmount(acc.revenue) : 0;
+        if (acc) {
+            acc.isPaid = isPaid;
+            acc.paidAmount = paidAmount;
+        }
         localStorage.setItem(ACCOUNTS_KEY, JSON.stringify(this.accounts));
         if (!this.isFirebaseReady) return;
         const ref = window.firebaseApp.doc(window.firebaseApp.db, "accounts", id);
-        await window.firebaseApp.updateDoc(ref, { isPaid });
+        await window.firebaseApp.updateDoc(ref, { isPaid, paidAmount });
     }
 
     static async closeAccount(id, reason = 'expired') {
@@ -575,6 +624,32 @@ class DataManager {
         });
     }
 
+    static async cancelRenewalAtPeriodEnd(id, reason = '') {
+        const acc = this.accounts.find(a => a.id === id);
+        if (!acc) return;
+        await this.updateAccountLifecycle(id, {
+            renewalIntent: 'cancel_at_period_end',
+            autoRenew: false,
+            cancelAtPeriodEnd: true,
+            cancelAtPeriodEndAt: new Date().toISOString(),
+            cancelAtPeriodEndReason: reason,
+            cancelAtPeriodEndBy: this.getCurrentUserEmail()
+        });
+    }
+
+    static async restoreRenewalIntent(id) {
+        const acc = this.accounts.find(a => a.id === id);
+        if (!acc) return;
+        await this.updateAccountLifecycle(id, {
+            renewalIntent: 'renew',
+            autoRenew: true,
+            cancelAtPeriodEnd: false,
+            cancelAtPeriodEndAt: null,
+            cancelAtPeriodEndReason: null,
+            cancelAtPeriodEndBy: null
+        });
+    }
+
     static async reactivateAccount(id, options = {}) {
         const acc = this.accounts.find(a => a.id === id);
         if (!acc) return;
@@ -605,6 +680,12 @@ class DataManager {
             cancelledAt: null,
             cancelledReason: null,
             cancelledBy: null,
+            renewalIntent: 'renew',
+            autoRenew: true,
+            cancelAtPeriodEnd: false,
+            cancelAtPeriodEndAt: null,
+            cancelAtPeriodEndReason: null,
+            cancelAtPeriodEndBy: null,
             reactivatedAt: new Date().toISOString(),
             reactivatedBy: this.getCurrentUserEmail(),
             reactivationReason: options.reason || ''
@@ -615,6 +696,11 @@ class DataManager {
         const acc = this.accounts.find(a => a.id === id);
         if (!acc) return;
         const previous = { ...acc };
+        const previousRenewals = [...this.renewals];
+        const previousPlanExpenses = [...this.planExpenses];
+        const period = this.getAccountPeriod(acc);
+        const previousStart = period.startDate || acc.startDate || '';
+        const previousEnd = period.endDate || '';
 
         const startDate = options.startDate || new Date().toISOString().split('T')[0];
         const durationDays = options.durationDays || acc.durationDays || 30;
@@ -622,14 +708,19 @@ class DataManager {
         calculatedEnd.setDate(calculatedEnd.getDate() + parseInt(durationDays || 30, 10));
         const currentPeriodEnd = options.endDate || this.formatDate(calculatedEnd);
         const isRecurringCycle = !!this.getBillingCycleMonths(acc.billingCycle);
+        const renewedAt = new Date().toISOString();
+        const renewedBy = this.getCurrentUserEmail();
         const patch = {
             previousStartDate: acc.startDate || null,
             previousDurationDays: acc.durationDays || null,
+            previousCurrentPeriodStart: acc.currentPeriodStart || null,
+            previousCurrentPeriodEnd: acc.currentPeriodEnd || null,
             startDate,
             durationDays,
             currentPeriodStart: startDate,
             currentPeriodEnd,
             nextBillingDate: isRecurringCycle ? currentPeriodEnd : '',
+            isPaid: options.isPaid === true,
             lifecycleStatus: 'active',
             closedAt: null,
             closedReason: null,
@@ -640,19 +731,77 @@ class DataManager {
             cancelledAt: null,
             cancelledReason: null,
             cancelledBy: null,
-            lastRenewedAt: new Date().toISOString(),
+            renewalIntent: 'renew',
+            autoRenew: true,
+            cancelAtPeriodEnd: false,
+            cancelAtPeriodEndAt: null,
+            cancelAtPeriodEndReason: null,
+            cancelAtPeriodEndBy: null,
+            lastRenewedAt: renewedAt,
             renewalCount: parseInt(acc.renewalCount || 0) + 1
         };
+        const amount = this.parseAmount(options.amount !== undefined ? options.amount : acc.revenue || 0);
+        const renewalRecord = {
+            accountId: acc.id,
+            customerId: acc.customerId || '',
+            platformId: acc.platformId || '',
+            servicePlanId: acc.servicePlanId || '',
+            previousPeriodStart: previousStart,
+            previousPeriodEnd: previousEnd,
+            newPeriodStart: startDate,
+            newPeriodEnd: currentPeriodEnd,
+            amount,
+            paidAmount: this.parseAmount(options.paidAmount !== undefined ? options.paidAmount : (options.isPaid === true ? amount : 0)),
+            isPaid: options.isPaid === true,
+            renewedAt,
+            renewedBy,
+            note: options.note || ''
+        };
+        const plan = acc.servicePlanId ? this.getServicePlanById(acc.servicePlanId) : null;
+        const planExpenseRecord = options.registerPlanExpense === true
+            ? this.buildPlanCycleExpense(plan, {
+                periodStart: startDate,
+                periodEnd: currentPeriodEnd,
+                amount: options.planExpenseAmount,
+                paidAt: renewedAt.split('T')[0],
+                sourceAccountId: acc.id
+            })
+            : null;
 
         Object.assign(acc, patch);
         localStorage.setItem(ACCOUNTS_KEY, JSON.stringify(this.accounts));
-        if (!this.isFirebaseReady) return;
         try {
-            const ref = window.firebaseApp.doc(window.firebaseApp.db, "accounts", id);
-            await window.firebaseApp.updateDoc(ref, patch);
+            if (this.isFirebaseReady) {
+                const batch = window.firebaseApp.db.batch();
+                const accountRef = window.firebaseApp.doc(window.firebaseApp.db, "accounts", id);
+                const renewalRef = window.firebaseApp.collection(window.firebaseApp.db, "renewals").doc();
+                const createdAt = new Date().toISOString();
+                batch.set(renewalRef, { ...renewalRecord, createdAt });
+                batch.update(accountRef, patch);
+
+                let savedExpense = null;
+                if (planExpenseRecord) {
+                    const expenseRef = window.firebaseApp.collection(window.firebaseApp.db, "planExpenses").doc();
+                    batch.set(expenseRef, { ...planExpenseRecord, createdAt });
+                    savedExpense = { id: expenseRef.id, ...planExpenseRecord, createdAt };
+                }
+
+                await batch.commit();
+                this.renewals.push({ id: renewalRef.id, ...renewalRecord, createdAt });
+                if (savedExpense) this.planExpenses.push(savedExpense);
+            } else {
+                await this.addRenewalRecord(renewalRecord);
+                if (planExpenseRecord) await this.addPlanExpense(planExpenseRecord);
+            }
+            localStorage.setItem(RENEWALS_KEY, JSON.stringify(this.renewals));
+            localStorage.setItem(PLAN_EXPENSES_KEY, JSON.stringify(this.planExpenses));
         } catch (error) {
             Object.assign(acc, previous);
+            this.renewals = previousRenewals;
+            this.planExpenses = previousPlanExpenses;
             localStorage.setItem(ACCOUNTS_KEY, JSON.stringify(this.accounts));
+            localStorage.setItem(RENEWALS_KEY, JSON.stringify(this.renewals));
+            localStorage.setItem(PLAN_EXPENSES_KEY, JSON.stringify(this.planExpenses));
             throw error;
         }
     }
@@ -676,6 +825,7 @@ class DataManager {
         if (!acc) return;
         const previous = { ...acc };
         const previousRenewals = [...this.renewals];
+        const previousPlanExpenses = [...this.planExpenses];
         const period = this.getAccountPeriod(acc);
         const previousStart = period.startDate || acc.startDate;
         const previousEnd = period.endDate || this.addCalendarMonths(previousStart, 1);
@@ -705,6 +855,12 @@ class DataManager {
             cancelledAt: null,
             cancelledReason: null,
             cancelledBy: null,
+            renewalIntent: 'renew',
+            autoRenew: true,
+            cancelAtPeriodEnd: false,
+            cancelAtPeriodEndAt: null,
+            cancelAtPeriodEndReason: null,
+            cancelAtPeriodEndBy: null,
             lastRenewedAt: new Date().toISOString(),
             renewalCount: parseInt(acc.renewalCount || 0) + 1,
             isPaid: options.isPaid === true
@@ -719,11 +875,22 @@ class DataManager {
             newPeriodStart: newStart,
             newPeriodEnd: newEnd,
             amount: parseFloat(options.amount !== undefined ? options.amount : acc.revenue || 0),
+            paidAmount: this.parseAmount(options.paidAmount !== undefined ? options.paidAmount : (options.isPaid === true ? (options.amount !== undefined ? options.amount : acc.revenue || 0) : 0)),
             isPaid: options.isPaid === true,
             renewedAt: patch.lastRenewedAt,
             renewedBy,
             note: options.note || ''
         };
+        const plan = acc.servicePlanId ? this.getServicePlanById(acc.servicePlanId) : null;
+        const planExpenseRecord = options.registerPlanExpense === true
+            ? this.buildPlanCycleExpense(plan, {
+                periodStart: newStart,
+                periodEnd: newEnd,
+                amount: options.planExpenseAmount,
+                paidAt: patch.lastRenewedAt.split('T')[0],
+                sourceAccountId: acc.id
+            })
+            : null;
 
         Object.assign(acc, patch);
         localStorage.setItem(ACCOUNTS_KEY, JSON.stringify(this.accounts));
@@ -732,17 +899,31 @@ class DataManager {
                 const batch = window.firebaseApp.db.batch();
                 const accountRef = window.firebaseApp.doc(window.firebaseApp.db, "accounts", id);
                 const renewalRef = window.firebaseApp.collection(window.firebaseApp.db, "renewals").doc();
-                batch.set(renewalRef, { ...renewalRecord, createdAt: new Date().toISOString() });
+                const createdAt = new Date().toISOString();
+                batch.set(renewalRef, { ...renewalRecord, createdAt });
                 batch.update(accountRef, patch);
+                let savedExpense = null;
+                if (planExpenseRecord) {
+                    const expenseRef = window.firebaseApp.collection(window.firebaseApp.db, "planExpenses").doc();
+                    batch.set(expenseRef, { ...planExpenseRecord, createdAt });
+                    savedExpense = { id: expenseRef.id, ...planExpenseRecord, createdAt };
+                }
                 await batch.commit();
+                this.renewals.push({ id: renewalRef.id, ...renewalRecord, createdAt });
+                if (savedExpense) this.planExpenses.push(savedExpense);
             } else {
                 await this.addRenewalRecord(renewalRecord);
+                if (planExpenseRecord) await this.addPlanExpense(planExpenseRecord);
             }
+            localStorage.setItem(RENEWALS_KEY, JSON.stringify(this.renewals));
+            localStorage.setItem(PLAN_EXPENSES_KEY, JSON.stringify(this.planExpenses));
         } catch (error) {
             Object.assign(acc, previous);
             this.renewals = previousRenewals;
+            this.planExpenses = previousPlanExpenses;
             localStorage.setItem(ACCOUNTS_KEY, JSON.stringify(this.accounts));
             localStorage.setItem(RENEWALS_KEY, JSON.stringify(this.renewals));
+            localStorage.setItem(PLAN_EXPENSES_KEY, JSON.stringify(this.planExpenses));
             throw error;
         }
     }
