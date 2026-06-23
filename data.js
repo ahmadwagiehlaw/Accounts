@@ -413,6 +413,7 @@ class DataManager {
             isPaid: initialIsPaid,
             periodStart: account.previousStartDate || account.startDate || period.startDate || '',
             periodEnd: account.previousPeriodEnd || account.previousCurrentPeriodEnd || period.endDate || '',
+            transactionDate: account.createdAt || account.previousStartDate || account.startDate || period.startDate || '',
             createdAt: account.createdAt || ''
         });
 
@@ -432,13 +433,14 @@ class DataManager {
                 isPaid: renewal.isPaid === true,
                 periodStart: renewal.newPeriodStart || renewal.currentPeriodStart || '',
                 periodEnd: renewal.newPeriodEnd || renewal.currentPeriodEnd || '',
+                transactionDate: renewal.renewedAt || renewal.createdAt || renewal.newPeriodStart || renewal.currentPeriodStart || '',
                 createdAt: renewal.renewedAt || renewal.createdAt || ''
             });
         });
 
         return entries.sort((a, b) => {
-            const aDate = a.periodStart || a.createdAt || '';
-            const bDate = b.periodStart || b.createdAt || '';
+            const aDate = a.transactionDate || a.createdAt || a.periodStart || '';
+            const bDate = b.transactionDate || b.createdAt || b.periodStart || '';
             return aDate.localeCompare(bDate);
         });
     }

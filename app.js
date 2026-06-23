@@ -962,6 +962,20 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function buildFinancialLedgerRows() {
+        const formatLedgerTransactionDate = (value) => {
+            if (!value) return '';
+            const parsed = new Date(value);
+            if (!Number.isNaN(parsed.getTime()) && String(value).includes('T')) {
+                return parsed.toLocaleString('ar-EG', {
+                    year: 'numeric',
+                    month: '2-digit',
+                    day: '2-digit',
+                    hour: '2-digit',
+                    minute: '2-digit'
+                });
+            }
+            return value;
+        };
         const rows = [];
         DataManager.getAccounts().forEach(acc => {
             const customer = DataManager.getCustomerById(acc.customerId);
@@ -979,7 +993,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     accountId: acc.id,
                     renewalId: isRenewal ? entry.id : '',
                     canUndo: isRenewal && latestRenewal && latestRenewal.id === entry.id,
-                    date: entry.periodStart || entry.createdAt || '',
+                    date: formatLedgerTransactionDate(entry.transactionDate || entry.createdAt || entry.periodStart || ''),
+                    sortDate: entry.transactionDate || entry.createdAt || entry.periodStart || '',
                     type: isRenewal ? 'تجديد' : 'اشتراك أصلي',
                     source: `${customer ? customer.name : (acc.customerName || 'عميل')} - ${platform ? platform.name : 'خدمة'}${plan ? ' / ' + plan.name : ''}`,
                     period: `${entry.periodStart || '-'} إلى ${entry.periodEnd || '-'}`,
@@ -1000,7 +1015,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     rows.push({
                         id: expense.id,
                         kind: 'expense',
-                        date: expense.paidAt || expense.periodStart || expense.createdAt || '',
+                        date: formatLedgerTransactionDate(expense.paidAt || expense.createdAt || expense.periodStart || ''),
+                        sortDate: expense.paidAt || expense.createdAt || expense.periodStart || '',
                         type: 'مصروف خطة',
                         source: `${platform ? platform.name : 'خدمة'}${plan.name ? ' / ' + plan.name : ''}`,
                         period: `${expense.periodStart || '-'} إلى ${expense.periodEnd || '-'}`,
@@ -1018,7 +1034,8 @@ document.addEventListener('DOMContentLoaded', () => {
             rows.push({
                 id: plan.id,
                 kind: 'legacy_cost',
-                date: plan.createdAt || plan.startDate || '',
+                date: formatLedgerTransactionDate(plan.createdAt || plan.startDate || ''),
+                sortDate: plan.createdAt || plan.startDate || '',
                 type: 'تكلفة خطة قديمة',
                 source: `${platform ? platform.name : 'خدمة'}${plan.name ? ' / ' + plan.name : ''}`,
                 period: 'Fallback للتوافق',
@@ -1028,7 +1045,7 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         });
 
-        return rows.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+        return rows.sort((a, b) => (b.sortDate || b.date || '').localeCompare(a.sortDate || a.date || ''));
     }
 
     function getFinancialLedgerSummaryHtml(stats) {
@@ -1145,7 +1162,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!row.canUndo) {
                 return `${editAction}<span class="ledger-muted-action">آخر تجديد فقط</span>`;
             }
-            return `${editAction}<button class="btn-icon ledger-undo-renewal-btn" data-id="${escapeAttr(row.renewalId)}" title="تراجع عن التجديد"><i class="fa-solid fa-rotate-left text-warning"></i></button>`;
+            return `${editAction}<button class="btn-icon ledger-action-chip ledger-undo-renewal-btn" data-id="${escapeAttr(row.renewalId)}" title="تراجع عن التجديد"><i class="fa-solid fa-rotate-left text-warning"></i><span>تراجع</span></button>`;
         }
         if (row.kind === 'subscription') {
             return `${editAction}<button class="btn-icon ledger-delete-account-btn" data-id="${escapeAttr(row.accountId)}" title="حذف الاشتراك وملحقاته"><i class="fa-solid fa-trash text-danger"></i></button>`;
