@@ -2449,16 +2449,27 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!plan) return;
         const today = new Date().toISOString().split('T')[0];
         const defaultAmount = Number(plan.registrationCost || 0);
+        const planCycle = DataManager.normalizePlanBillingCycle(plan);
+        const cycleMonths = DataManager.getBillingCycleMonths(planCycle);
+        const expenses = DataManager.getPlanExpenses ? DataManager.getPlanExpenses(plan.id).slice() : [];
+        const latestExpense = expenses
+            .filter(expense => expense.periodEnd)
+            .sort((a, b) => (b.periodEnd || '').localeCompare(a.periodEnd || ''))[0];
+        const defaultStart = latestExpense?.periodEnd || today;
+        const defaultEnd = cycleMonths
+            ? DataManager.addCalendarMonths(defaultStart, cycleMonths)
+            : addDaysToDate(defaultStart, parseInt(plan.durationDays || 30, 10));
         const result = await Swal.fire({
             title: 'إضافة مصروف للخطة',
             html: `
                 <div class="swal-form-grid">
+                    <div class="swal-inline-note">سجل هنا تكلفة دورة الخطة فقط. هذا لا يحدث تلقائيًا بدون تسجيل تجديد أو إضافة مصروف دورة.</div>
                     <label style="display:block;text-align:right;margin-bottom:0.35rem;">المبلغ</label>
                     <input type="number" id="planExpenseAmount" class="swal2-input" min="0" step="0.01" value="${defaultAmount || ''}" style="width:100%;margin:0 0 0.75rem;">
                     <label style="display:block;text-align:right;margin-bottom:0.35rem;">من تاريخ</label>
-                    <input type="date" id="planExpenseStart" class="swal2-input" value="${today}" style="width:100%;margin:0 0 0.75rem;">
+                    <input type="date" id="planExpenseStart" class="swal2-input" value="${defaultStart}" style="width:100%;margin:0 0 0.75rem;">
                     <label style="display:block;text-align:right;margin-bottom:0.35rem;">إلى تاريخ</label>
-                    <input type="date" id="planExpenseEnd" class="swal2-input" value="${DataManager.addCalendarMonths(today, 1)}" style="width:100%;margin:0 0 0.75rem;">
+                    <input type="date" id="planExpenseEnd" class="swal2-input" value="${defaultEnd}" style="width:100%;margin:0 0 0.75rem;">
                     <label style="display:block;text-align:right;margin-bottom:0.35rem;">ملاحظة</label>
                     <input type="text" id="planExpenseNote" class="swal2-input" value="مصروف دورة فوترة" style="width:100%;margin:0;">
                 </div>
@@ -2492,6 +2503,7 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             await DataManager.addPlanExpense(result.value);
             renderPlans();
+            renderAccounts();
             renderDashboard();
             showToast('تمت إضافة مصروف الخطة');
         } catch (error) {
@@ -2716,6 +2728,14 @@ document.addEventListener('DOMContentLoaded', () => {
         const selectedPlan = planFilterVal === 'none' ? null : DataManager.getServicePlanById(planFilterVal);
         const summaryTitle = selectedPlan ? selectedPlan.name || 'خطة بدون اسم' : 'اشتراكات بدون خطة';
         const uniqueCustomers = new Set(visibleAccounts.map(acc => acc.customerId || acc.customerName || acc.id));
+        const statusCounts = visibleAccounts.reduce((counts, account) => {
+            const status = DataManager.getAccountStatus(account).status;
+            if (status === 'active' || status === 'warning') counts.active++;
+            else if (status === 'expired') counts.expired++;
+            else if (['paused', 'cancelled', 'closed'].includes(status)) counts.inactive++;
+            else counts.needsReview++;
+            return counts;
+        }, { active: 0, expired: 0, inactive: 0, needsReview: 0 });
         const totals = visibleAccounts.reduce((accum, account) => {
             const financials = DataManager.getAccountFinancials(account);
             accum.billed += financials.billedAmount || 0;
@@ -2730,8 +2750,10 @@ document.addEventListener('DOMContentLoaded', () => {
         summary.style.display = '';
         summary.innerHTML = `
             <div class="accounts-plan-summary-title">
-                <i class="fa-solid fa-chart-simple text-primary"></i>
-                <span>${escapeHtml(summaryTitle)}</span>
+                <span><i class="fa-solid fa-chart-simple text-primary"></i> ${escapeHtml(summaryTitle)}</span>
+                ${selectedPlan ? `<button class="btn btn-secondary btn-sm btn-plan-summary-expense" data-id="${escapeAttr(selectedPlan.id)}">
+                    <i class="fa-solid fa-receipt"></i> تسجيل مصروف دورة
+                </button>` : ''}
             </div>
             <div class="accounts-plan-summary-grid">
                 <div class="accounts-plan-summary-card">
@@ -2741,6 +2763,18 @@ document.addEventListener('DOMContentLoaded', () => {
                 <div class="accounts-plan-summary-card">
                     <small>الأعضاء</small>
                     <strong>${uniqueCustomers.size.toLocaleString('ar-EG')}</strong>
+                </div>
+                <div class="accounts-plan-summary-card success">
+                    <small>نشط/قارب</small>
+                    <strong>${statusCounts.active.toLocaleString('ar-EG')}</strong>
+                </div>
+                <div class="accounts-plan-summary-card danger">
+                    <small>منتهي</small>
+                    <strong>${statusCounts.expired.toLocaleString('ar-EG')}</strong>
+                </div>
+                <div class="accounts-plan-summary-card">
+                    <small>موقوف/ملغي/مغلق</small>
+                    <strong>${statusCounts.inactive.toLocaleString('ar-EG')}</strong>
                 </div>
                 <div class="accounts-plan-summary-card">
                     <small>تكلفة الخطة عليك</small>
@@ -2764,6 +2798,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 </div>
             </div>
         `;
+        summary.querySelector('.btn-plan-summary-expense')?.addEventListener('click', () => addPlanExpenseFromUi(selectedPlan.id));
     }
 
     function renderAccounts() {
