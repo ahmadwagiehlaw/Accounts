@@ -420,24 +420,62 @@ document.addEventListener('DOMContentLoaded', () => {
     // ============================================================
     //  NAVIGATION
     // ============================================================
+    setupFinancialLedgerView();
+
+    function setupFinancialLedgerView() {
+        const viewsContainer = document.querySelector('.views-container');
+        if (viewsContainer && !document.getElementById('view-financial-ledger')) {
+            const section = document.createElement('section');
+            section.id = 'view-financial-ledger';
+            section.className = 'view';
+            section.innerHTML = `
+                <div class="financial-ledger-page">
+                    <div class="ledger-empty">جار تحميل كشف المعاملات...</div>
+                </div>
+            `;
+            viewsContainer.appendChild(section);
+        }
+
+        const sidebarNav = document.querySelector('.sidebar-nav');
+        if (sidebarNav && !sidebarNav.querySelector('[data-view="financial-ledger"]')) {
+            const item = document.createElement('a');
+            item.href = '#';
+            item.className = 'nav-item';
+            item.dataset.view = 'financial-ledger';
+            item.innerHTML = '<i class="fa-solid fa-receipt"></i><span>كشف المعاملات</span>';
+            const platformsItem = sidebarNav.querySelector('[data-view="platforms"]');
+            sidebarNav.insertBefore(item, platformsItem || null);
+            item.addEventListener('click', (e) => {
+                e.preventDefault();
+                navigateToView('financial-ledger', 'كشف المعاملات');
+            });
+        }
+    }
+
+    function navigateToView(viewId, title = '') {
+        document.querySelectorAll('.nav-item').forEach(nav => {
+            nav.classList.toggle('active', nav.getAttribute('data-view') === viewId);
+            if (!title && nav.getAttribute('data-view') === viewId) {
+                title = nav.querySelector('span')?.innerText || title;
+            }
+        });
+
+        const bNavItems = document.querySelectorAll('.b-nav-item');
+        bNavItems.forEach(nav => nav.classList.toggle('active', nav.getAttribute('data-view') === viewId));
+
+        if (pageTitle) pageTitle.innerText = title || pageTitle.innerText;
+        document.querySelectorAll('.view').forEach(view => view.classList.remove('active'));
+        const view = document.getElementById(`view-${viewId}`);
+        if (view) view.classList.add('active');
+        closeMobileSidebar();
+        refreshView(viewId);
+    }
+
     navItems.forEach(item => {
         item.addEventListener('click', (e) => {
             e.preventDefault();
             const viewId = item.getAttribute('data-view');
-            navItems.forEach(nav => nav.classList.remove('active'));
-            item.classList.add('active');
-
-            const bNavItems = document.querySelectorAll('.b-nav-item');
-            bNavItems.forEach(bNav => {
-                bNav.classList.remove('active');
-                if (bNav.getAttribute('data-view') === viewId) bNav.classList.add('active');
-            });
-
-            pageTitle.innerText = item.querySelector('span').innerText;
-            views.forEach(view => view.classList.remove('active'));
-            document.getElementById(`view-${viewId}`).classList.add('active');
-            closeMobileSidebar();
-            refreshView(viewId);
+            navigateToView(viewId, item.querySelector('span').innerText);
         });
     });
 
@@ -448,20 +486,7 @@ document.addEventListener('DOMContentLoaded', () => {
             e.preventDefault();
             const viewId = item.getAttribute('data-view');
 
-            bNavItems.forEach(nav => nav.classList.remove('active'));
-            item.classList.add('active');
-
-            navItems.forEach(nav => {
-                nav.classList.remove('active');
-                if (nav.getAttribute('data-view') === viewId) {
-                    nav.classList.add('active');
-                    pageTitle.innerText = nav.querySelector('span').innerText;
-                }
-            });
-
-            views.forEach(view => view.classList.remove('active'));
-            document.getElementById(`view-${viewId}`).classList.add('active');
-            refreshView(viewId);
+            navigateToView(viewId);
         });
     });
 
@@ -471,6 +496,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (viewId === 'accounts') renderAccounts();
         if (viewId === 'plans') renderPlans();
         if (viewId === 'platforms') { renderPlatforms(); renderLookups(); }
+        if (viewId === 'financial-ledger') renderFinancialLedgerPage();
     }
 
     // ---- Mobile Sidebar ----
@@ -1005,6 +1031,17 @@ document.addEventListener('DOMContentLoaded', () => {
         return rows.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
     }
 
+    function getFinancialLedgerSummaryHtml(stats) {
+        const fmt = (num) => Number(num || 0).toLocaleString('ar-EG');
+        return `
+            <div class="ledger-summary-card"><small>المستحق</small><strong>${fmt(stats.totalRevenue)} ج.م</strong></div>
+            <div class="ledger-summary-card success"><small>المحصل</small><strong>${fmt(stats.totalPaid)} ج.م</strong></div>
+            <div class="ledger-summary-card danger"><small>غير المسدد</small><strong>${fmt(stats.totalUnpaid)} ج.م</strong></div>
+            <div class="ledger-summary-card warning"><small>التكلفة</small><strong>${fmt(stats.totalCost)} ج.م</strong></div>
+            <div class="ledger-summary-card"><small>صافي المحصل</small><strong>${fmt(stats.netCollected)} ج.م</strong></div>
+        `;
+    }
+
     function openFinancialLedger() {
         const summary = document.getElementById('financialLedgerSummary');
         const body = document.getElementById('financialLedgerBody');
@@ -1050,15 +1087,68 @@ document.addEventListener('DOMContentLoaded', () => {
         openModal('financialLedgerModal');
     }
 
+    function renderFinancialLedgerPage() {
+        const view = document.getElementById('view-financial-ledger');
+        if (!view) return;
+
+        const stats = DataManager.calculateStats();
+        const rows = buildFinancialLedgerRows();
+        view.innerHTML = `
+            <div class="financial-ledger-page">
+                <div class="ledger-page-header">
+                    <div>
+                        <h2><i class="fa-solid fa-receipt"></i> كشف المعاملات المالية</h2>
+                        <p>راجع الاشتراكات والتجديدات ومصروفات الخطط من مكان واحد.</p>
+                    </div>
+                    <button class="btn btn-secondary btn-sm" id="btnLedgerCompareBackup">
+                        <i class="fa-solid fa-code-compare"></i> مقارنة نسخة احتياطية
+                    </button>
+                </div>
+                <div class="ledger-summary-grid ledger-page-summary">
+                    ${getFinancialLedgerSummaryHtml(stats)}
+                </div>
+                <div class="ledger-page-shell glass-panel">
+                    <div class="ledger-toolbar ledger-page-toolbar">
+                        <div class="search-box ledger-search-box">
+                            <i class="fa-solid fa-search"></i>
+                            <input type="text" id="ledgerPageSearch" placeholder="ابحث باسم العميل، الخطة، الخدمة أو الفترة...">
+                        </div>
+                        <select id="ledgerPageTypeFilter" class="form-control">
+                            <option value="all">كل المعاملات</option>
+                            <option value="subscription">اشتراكات أصلية</option>
+                            <option value="renewal">تجديدات</option>
+                            <option value="expense">مصروفات خطط</option>
+                            <option value="legacy_cost">تكلفة قديمة</option>
+                        </select>
+                    </div>
+                    <div id="ledgerPageRowsContainer" class="ledger-page-rows"></div>
+                </div>
+            </div>
+        `;
+
+        const renderRows = () => renderFinancialLedgerRows(rows, {
+            containerId: 'ledgerPageRowsContainer',
+            searchId: 'ledgerPageSearch',
+            typeId: 'ledgerPageTypeFilter'
+        });
+        renderRows();
+        document.getElementById('ledgerPageSearch')?.addEventListener('input', renderRows);
+        document.getElementById('ledgerPageTypeFilter')?.addEventListener('change', renderRows);
+        document.getElementById('btnLedgerCompareBackup')?.addEventListener('click', () => document.getElementById('backupCompareInput')?.click());
+    }
+
     function getLedgerActionHtml(row) {
+        const editAction = row.accountId
+            ? `<button class="btn-icon ledger-edit-account-btn" data-id="${escapeAttr(row.accountId)}" title="تعديل الاشتراك"><i class="fa-solid fa-pen text-primary"></i></button>`
+            : '';
         if (row.kind === 'renewal') {
             if (!row.canUndo) {
-                return '<span class="ledger-muted-action">آخر تجديد فقط</span>';
+                return `${editAction}<span class="ledger-muted-action">آخر تجديد فقط</span>`;
             }
-            return `<button class="btn-icon ledger-undo-renewal-btn" data-id="${escapeAttr(row.renewalId)}" title="تراجع عن التجديد"><i class="fa-solid fa-rotate-left text-warning"></i></button>`;
+            return `${editAction}<button class="btn-icon ledger-undo-renewal-btn" data-id="${escapeAttr(row.renewalId)}" title="تراجع عن التجديد"><i class="fa-solid fa-rotate-left text-warning"></i></button>`;
         }
         if (row.kind === 'subscription') {
-            return `<button class="btn-icon ledger-delete-account-btn" data-id="${escapeAttr(row.accountId)}" title="حذف الاشتراك وملحقاته"><i class="fa-solid fa-trash text-danger"></i></button>`;
+            return `${editAction}<button class="btn-icon ledger-delete-account-btn" data-id="${escapeAttr(row.accountId)}" title="حذف الاشتراك وملحقاته"><i class="fa-solid fa-trash text-danger"></i></button>`;
         }
         if (row.expenseId) {
             return `<button class="btn-icon ledger-delete-expense-btn" data-id="${escapeAttr(row.expenseId)}" title="حذف المصروف"><i class="fa-solid fa-trash text-danger"></i></button>`;
@@ -1066,11 +1156,11 @@ document.addEventListener('DOMContentLoaded', () => {
         return '<span class="ledger-muted-action">للعرض فقط</span>';
     }
 
-    function renderFinancialLedgerRows(rows) {
-        const container = document.getElementById('ledgerRowsContainer');
+    function renderFinancialLedgerRows(rows, options = {}) {
+        const container = document.getElementById(options.containerId || 'ledgerRowsContainer');
         if (!container) return;
-        const term = (document.getElementById('ledgerSearch')?.value || '').trim().toLowerCase();
-        const type = document.getElementById('ledgerTypeFilter')?.value || 'all';
+        const term = (document.getElementById(options.searchId || 'ledgerSearch')?.value || '').trim().toLowerCase();
+        const type = document.getElementById(options.typeId || 'ledgerTypeFilter')?.value || 'all';
         const filteredRows = rows.filter(row => {
             const matchesType = type === 'all' || row.kind === type;
             const text = `${row.date} ${row.type} ${row.source} ${row.period} ${row.status}`.toLowerCase();
@@ -1097,8 +1187,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     </tr>
                 </thead>
                 <tbody>
-                    ${filteredRows.map(row => `
-                        <tr>
+                    ${filteredRows.map((row, index) => `
+                        <tr class="ledger-row-clickable" data-ledger-index="${index}">
                             <td>${escapeHtml(row.date || '-')}</td>
                             <td>${escapeHtml(row.type)}</td>
                             <td>${escapeHtml(row.source)}</td>
@@ -1111,8 +1201,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 </tbody>
             </table>
             <div class="ledger-card-list">
-                ${filteredRows.map(row => `
-                    <div class="ledger-card">
+                ${filteredRows.map((row, index) => `
+                    <div class="ledger-card ledger-row-clickable" data-ledger-index="${index}">
                         <div class="ledger-card-head">
                             <strong>${escapeHtml(row.type)}</strong>
                             <span class="${row.amount < 0 ? 'text-warning' : 'text-success'}">${row.amount < 0 ? '-' : ''}${fmt(Math.abs(row.amount))} ج.م</span>
@@ -1129,23 +1219,92 @@ document.addEventListener('DOMContentLoaded', () => {
             </div>
         `;
         bindLedgerActions(container);
+        bindLedgerRowDetails(container, filteredRows);
     }
 
     function bindLedgerActions(container) {
         container.querySelectorAll('.ledger-delete-expense-btn').forEach(btn => {
-            btn.addEventListener('click', () => deletePlanExpenseFromUi(btn.dataset.id));
+            btn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                if (e.target.closest('.swal2-popup')) Swal.close();
+                deletePlanExpenseFromUi(btn.dataset.id);
+            });
         });
         container.querySelectorAll('.ledger-undo-renewal-btn').forEach(btn => {
-            btn.addEventListener('click', () => undoRenewalFromLedger(btn.dataset.id));
+            btn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                if (e.target.closest('.swal2-popup')) Swal.close();
+                undoRenewalFromLedger(btn.dataset.id);
+            });
         });
         container.querySelectorAll('.ledger-delete-account-btn').forEach(btn => {
-            btn.addEventListener('click', () => deleteAccountCascadeFromLedger(btn.dataset.id));
+            btn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                if (e.target.closest('.swal2-popup')) Swal.close();
+                deleteAccountCascadeFromLedger(btn.dataset.id);
+            });
         });
+        container.querySelectorAll('.ledger-edit-account-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                if (e.target.closest('.swal2-popup')) Swal.close();
+                closeModal('financialLedgerModal');
+                editAccount(btn.dataset.id);
+            });
+        });
+    }
+
+    function bindLedgerRowDetails(container, rows) {
+        container.querySelectorAll('.ledger-row-clickable').forEach(item => {
+            item.addEventListener('click', (e) => {
+                if (e.target.closest('button, a, input, select')) return;
+                const row = rows[Number(item.dataset.ledgerIndex)];
+                if (row) showLedgerTransactionDetails(row);
+            });
+        });
+    }
+
+    function showLedgerTransactionDetails(row) {
+        const fmt = (num) => Number(num || 0).toLocaleString('ar-EG');
+        const amountClass = row.amount < 0 ? 'text-warning' : 'text-success';
+        const actions = getLedgerActionHtml(row);
+        Swal.fire({
+            title: 'تفاصيل المعاملة',
+            html: `
+                <div class="ledger-detail-grid">
+                    <div><span>النوع</span><strong>${escapeHtml(row.type || '-')}</strong></div>
+                    <div><span>التاريخ</span><strong>${escapeHtml(row.date || '-')}</strong></div>
+                    <div class="wide"><span>البيان</span><strong>${escapeHtml(row.source || '-')}</strong></div>
+                    <div class="wide"><span>الفترة</span><strong>${escapeHtml(row.period || '-')}</strong></div>
+                    <div><span>الحالة</span><strong class="${row.statusClass || ''}">${escapeHtml(row.status || '-')}</strong></div>
+                    <div><span>المبلغ</span><strong class="${amountClass}">${row.amount < 0 ? '-' : ''}${fmt(Math.abs(row.amount || 0))} ج.م</strong></div>
+                </div>
+                <div class="ledger-detail-actions">${actions}</div>
+            `,
+            showConfirmButton: false,
+            showCloseButton: true,
+            background: '#111827',
+            color: '#fff',
+            didOpen: (popup) => bindLedgerActions(popup)
+        });
+    }
+
+    function refreshFinancialLedgerDisplays() {
+        if (document.getElementById('view-financial-ledger')?.classList.contains('active')) {
+            renderFinancialLedgerPage();
+        }
+        if (document.getElementById('financialLedgerModal')?.classList.contains('show')) {
+            openFinancialLedger();
+        }
     }
 
     const btnFinancialLedger = document.getElementById('btnFinancialLedger');
     if (btnFinancialLedger) {
-        btnFinancialLedger.addEventListener('click', openFinancialLedger);
+        btnFinancialLedger.addEventListener('click', () => navigateToView('financial-ledger', 'كشف المعاملات'));
     }
 
     function readBackupComparisonFile(file) {
@@ -2341,7 +2500,7 @@ document.addEventListener('DOMContentLoaded', () => {
             await DataManager.deletePlanExpense(expenseId);
             renderPlans();
             renderDashboard();
-            openFinancialLedger();
+            refreshFinancialLedgerDisplays();
             showToast('تم حذف مصروف الخطة');
         } catch (error) {
             console.error('Failed to delete plan expense:', error);
@@ -2366,7 +2525,7 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             await DataManager.undoRenewal(renewalId);
             refreshAccountViews();
-            openFinancialLedger();
+            refreshFinancialLedgerDisplays();
             showToast('تم التراجع عن التجديد');
         } catch (error) {
             console.error('Failed to undo renewal:', error);
@@ -2398,7 +2557,7 @@ document.addEventListener('DOMContentLoaded', () => {
             await DataManager.deleteAccountCascade(accountId);
             refreshAccountViews();
             renderCustomers();
-            openFinancialLedger();
+            refreshFinancialLedgerDisplays();
             showToast('تم حذف الاشتراك وملحقاته');
         } catch (error) {
             console.error('Failed to delete account cascade:', error);

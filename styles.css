@@ -817,6 +817,94 @@ h6 {
     justify-content: flex-end;
 }
 
+.financial-ledger-page {
+    display: flex;
+    flex-direction: column;
+    gap: 0.9rem;
+}
+
+.ledger-page-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
+}
+
+.ledger-page-header h2 {
+    margin: 0 0 0.25rem;
+    font-size: 1.15rem;
+}
+
+.ledger-page-header p {
+    margin: 0;
+    color: var(--text-muted);
+    font-size: 0.86rem;
+}
+
+.ledger-page-shell {
+    padding: 0.9rem;
+}
+
+.ledger-page-summary {
+    margin-bottom: 0;
+}
+
+.ledger-page-rows .ledger-table {
+    display: none;
+}
+
+.ledger-page-rows .ledger-card-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+}
+
+.ledger-row-clickable {
+    cursor: pointer;
+}
+
+.ledger-card:hover {
+    border-color: rgba(139, 92, 246, 0.45);
+    background: rgba(255, 255, 255, 0.055);
+}
+
+.ledger-detail-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.65rem;
+    text-align: right;
+}
+
+.ledger-detail-grid > div {
+    padding: 0.65rem;
+    border: 1px solid var(--border-glass);
+    border-radius: var(--radius-md);
+    background: rgba(255, 255, 255, 0.04);
+}
+
+.ledger-detail-grid .wide {
+    grid-column: 1 / -1;
+}
+
+.ledger-detail-grid span {
+    display: block;
+    color: var(--text-muted);
+    font-size: 0.72rem;
+    margin-bottom: 0.25rem;
+}
+
+.ledger-detail-grid strong {
+    font-size: 0.9rem;
+}
+
+.ledger-detail-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.45rem;
+    margin-top: 0.8rem;
+    flex-wrap: wrap;
+}
+
 .backup-compare-wrap {
     max-height: 60vh;
     overflow: auto;
@@ -860,6 +948,27 @@ h6 {
 
     .ledger-card-list {
         display: grid;
+    }
+
+    .ledger-page-header {
+        align-items: stretch;
+    }
+
+    .ledger-page-header .btn {
+        width: 100%;
+        justify-content: center;
+    }
+
+    .ledger-page-shell {
+        padding: 0.75rem;
+    }
+
+    .ledger-page-rows .ledger-card-list {
+        grid-template-columns: 1fr;
+    }
+
+    .ledger-detail-grid {
+        grid-template-columns: 1fr;
     }
 }
 
