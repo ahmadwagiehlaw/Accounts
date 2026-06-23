@@ -2328,7 +2328,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const emptyState = document.getElementById('plansEmptyState');
         if (!grid) return;
 
-        const plans = DataManager.getServicePlans();
+        const plans = DataManager.getCanonicalServicePlans ? DataManager.getCanonicalServicePlans() : DataManager.getServicePlans();
         grid.innerHTML = '';
 
         if (plans.length === 0) {
@@ -2691,7 +2691,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function populateAccountsPlanFilter(selectedValue = 'all') {
         const select = document.getElementById('filterPlan');
         if (!select) return;
-        const plans = DataManager.getServicePlans()
+        const plans = (DataManager.getCanonicalServicePlans ? DataManager.getCanonicalServicePlans() : DataManager.getServicePlans())
             .slice()
             .sort((a, b) => (a.name || '').localeCompare(b.name || '', 'ar'));
         const validValues = new Set(['all', 'none', ...plans.map(plan => plan.id)]);
@@ -2811,7 +2811,9 @@ document.addEventListener('DOMContentLoaded', () => {
             const matchesPlan =
                 planFilterVal === 'all' ||
                 (planFilterVal === 'none' && !acc.servicePlanId) ||
-                acc.servicePlanId === planFilterVal;
+                (DataManager.isAccountInServicePlanGroup
+                    ? DataManager.isAccountInServicePlanGroup(acc, planFilterVal)
+                    : acc.servicePlanId === planFilterVal);
 
             const isPaid = acc.isPaid === true;
             let matchesPayment = true;
@@ -3744,7 +3746,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function populatePlansCheckboxes(selectedIds) {
         const container = document.getElementById('accPlansCheckboxes');
         if (!container) return;
-        const plans = DataManager.getServicePlans();
+        const plans = DataManager.getCanonicalServicePlans ? DataManager.getCanonicalServicePlans() : DataManager.getServicePlans();
         const selArr = Array.isArray(selectedIds) ? selectedIds : (selectedIds ? [selectedIds] : []);
 
         let html = `<label class="plan-checkbox-item no-plan-item${selArr.length === 0 ? ' checked' : ''}">
@@ -3759,7 +3761,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
         plans.forEach(plan => {
             const platform = DataManager.getPlatformById(plan.platformId);
-            const isChecked = selArr.includes(plan.id);
+            const isChecked = selArr.includes(plan.id) || (DataManager.getServicePlanGroupKey
+                && selArr.some(id => DataManager.getServicePlanGroupKey(id) === DataManager.getServicePlanGroupKey(plan)));
             const label = (plan.name || (platform ? platform.name : 'خطة'));
             const platName = platform ? platform.name : '';
             const cycle = DataManager.normalizePlanBillingCycle(plan);

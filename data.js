@@ -166,14 +166,52 @@ class DataManager {
     // ==================== SERVICE PLANS ====================
     static getServicePlans() { return this.servicePlans; }
     static getServicePlanById(id) { return this.servicePlans.find(p => p.id === id) || null; }
+    static normalizePlanName(name) {
+        return String(name || '').trim().replace(/\s+/g, ' ').toLowerCase();
+    }
+    static getServicePlanGroupKey(planOrId) {
+        const plan = typeof planOrId === 'string' ? this.getServicePlanById(planOrId) : planOrId;
+        if (!plan) return '';
+        const nameKey = this.normalizePlanName(plan.name);
+        return `${plan.platformId || ''}|${nameKey || plan.id}`;
+    }
+    static getEquivalentServicePlanIds(planId) {
+        const key = this.getServicePlanGroupKey(planId);
+        if (!key) return planId ? [planId] : [];
+        return this.servicePlans
+            .filter(plan => this.getServicePlanGroupKey(plan) === key)
+            .map(plan => plan.id);
+    }
+    static isAccountInServicePlanGroup(account, planId) {
+        if (!account || !planId) return false;
+        return this.getEquivalentServicePlanIds(planId).includes(account.servicePlanId);
+    }
+    static getCanonicalServicePlans() {
+        const groups = new Map();
+        this.servicePlans.forEach(plan => {
+            const key = this.getServicePlanGroupKey(plan);
+            if (!key) return;
+            const current = groups.get(key);
+            if (!current) {
+                groups.set(key, plan);
+                return;
+            }
+            const currentCount = this.accounts.filter(acc => acc.servicePlanId === current.id).length;
+            const nextCount = this.accounts.filter(acc => acc.servicePlanId === plan.id).length;
+            if (nextCount > currentCount) groups.set(key, plan);
+        });
+        return Array.from(groups.values());
+    }
     static getServicePlanMembersCount(planId) {
-        return this.accounts.filter(a => a.servicePlanId === planId).length;
+        return this.getServicePlanAccounts(planId).length;
     }
     static getServicePlanAccounts(planId) {
-        return this.accounts.filter(a => a.servicePlanId === planId);
+        const ids = this.getEquivalentServicePlanIds(planId);
+        return this.accounts.filter(a => ids.includes(a.servicePlanId));
     }
     static getPlanExpenses(planId) {
-        return this.planExpenses.filter(expense => expense.planId === planId);
+        const ids = this.getEquivalentServicePlanIds(planId);
+        return this.planExpenses.filter(expense => ids.includes(expense.planId));
     }
     static getPlanExpensesTotal(planId) {
         return this.getPlanExpenses(planId).reduce((sum, expense) => sum + this.parseAmount(expense.amount), 0);
@@ -183,8 +221,9 @@ class DataManager {
     }
     static hasPlanExpenseForPeriod(planId, periodStart, periodEnd) {
         if (!planId || !periodStart || !periodEnd) return false;
+        const ids = this.getEquivalentServicePlanIds(planId);
         return this.planExpenses.some(expense =>
-            expense.planId === planId &&
+            ids.includes(expense.planId) &&
             expense.periodStart === periodStart &&
             expense.periodEnd === periodEnd
         );
@@ -1096,7 +1135,7 @@ class DataManager {
         });
 
         // Cost from plans (registrationCost)
-        this.servicePlans.forEach(plan => {
+        this.getCanonicalServicePlans().forEach(plan => {
             stats.totalCost += this.getPlanCost(plan);
         });
 
