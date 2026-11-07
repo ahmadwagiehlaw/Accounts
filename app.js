@@ -979,13 +979,62 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    let currentPlanFilter = 'all';
+
+    // Plan Filter Buttons Handler
+    document.querySelectorAll('.plan-filter-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            document.querySelectorAll('.plan-filter-btn').forEach(b => {
+                b.classList.remove('btn-primary');
+                b.classList.add('btn-outline');
+            });
+            btn.classList.remove('btn-outline');
+            btn.classList.add('btn-primary');
+            currentPlanFilter = btn.dataset.filter;
+            renderPlans();
+        });
+    });
+
+    function getPlanActivityStats(planId) {
+        const subs = DataManager.getServicePlanAccounts(planId);
+        let activeCount = 0;
+        let expiredCount = 0;
+        subs.forEach(acc => {
+            const st = DataManager.getAccountStatus(acc);
+            if (st.status === 'active' || st.status === 'warning') activeCount++;
+            else expiredCount++;
+        });
+        return {
+            total: subs.length,
+            activeCount,
+            expiredCount,
+            isAllExpired: subs.length > 0 && activeCount === 0,
+            isEmpty: subs.length === 0
+        };
+    }
+
     function renderPlans() {
         const grid = document.getElementById('plansGrid');
         const emptyState = document.getElementById('plansEmptyState');
         if (!grid) return;
 
-        const plans = DataManager.getServicePlans();
+        let plans = DataManager.getServicePlans();
         grid.innerHTML = '';
+
+        // Apply Plan Filter
+        if (currentPlanFilter === 'active') {
+            plans = plans.filter(p => {
+                const act = getPlanActivityStats(p.id);
+                return p.status !== 'archived' && (act.activeCount > 0 || act.isEmpty);
+            });
+        } else if (currentPlanFilter === 'expired') {
+            plans = plans.filter(p => {
+                const act = getPlanActivityStats(p.id);
+                return p.status !== 'archived' && act.isAllExpired;
+            });
+        } else if (currentPlanFilter === 'archived') {
+            plans = plans.filter(p => p.status === 'archived');
+        }
 
         if (plans.length === 0) {
             if (emptyState) emptyState.style.display = 'flex';
@@ -996,7 +1045,8 @@ document.addEventListener('DOMContentLoaded', () => {
         plans.forEach(plan => {
             const platform = DataManager.getPlatformById(plan.platformId);
             const planFin = DataManager.getPlanFinancials(plan.id);
-            const statusInfo = DataManager.getAccountStatus({ startDate: plan.startDate, durationDays: plan.durationDays || 365 });
+            const act = getPlanActivityStats(plan.id);
+            const isArchived = plan.status === 'archived';
 
             const maskedEmail = plan.email ? plan.email.replace(/(.{2})(.*)(@.*)/, '$1***$3') : '—';
 
@@ -1010,6 +1060,18 @@ document.addEventListener('DOMContentLoaded', () => {
                 typeBadge = '<span class="status-badge" style="background:rgba(168,85,247,0.15);color:#a855f7;"><i class="fa-solid fa-people-roof"></i> عائلة</span>';
             }
 
+            // Activity status badge
+            let activityBadge = '';
+            if (isArchived) {
+                activityBadge = '<span class="status-badge" style="background:rgba(107,114,128,0.2);color:#9ca3af;"><i class="fa-solid fa-box-archive"></i> مؤرشفة</span>';
+            } else if (act.isAllExpired) {
+                activityBadge = '<span class="status-badge" style="background:rgba(239,68,68,0.15);color:#ef4444;"><i class="fa-solid fa-clock-rotate-left"></i> كل الاشتراكات منتهية</span>';
+            } else if (act.activeCount > 0) {
+                activityBadge = `<span class="status-badge" style="background:rgba(34,197,94,0.15);color:#22c55e;"><i class="fa-solid fa-circle-check"></i> ${act.activeCount} مشترك نشط</span>`;
+            } else {
+                activityBadge = '<span class="status-badge" style="background:rgba(255,255,255,0.08);color:#9ca3af;">خالية</span>';
+            }
+
             // Cost label
             let costLabel = '';
             if (plan.monthlyCost) costLabel += `${Number(plan.monthlyCost).toLocaleString('ar-EG')} ج.م شهرياً `;
@@ -1018,7 +1080,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!costLabel) costLabel = '0 ج.م';
 
             const card = document.createElement('div');
-            card.className = 'plan-card glass-panel';
+            card.className = `plan-card glass-panel${act.isAllExpired ? ' plan-expired-card' : ''}${isArchived ? ' plan-archived-card' : ''}`;
             card.innerHTML = `
                 <div class="plan-card-header">
                     <div class="plan-platform-icon" style="background:${platform ? platform.color + '25' : '#33333355'};color:${platform ? platform.color : '#fff'};">
@@ -1028,13 +1090,13 @@ document.addEventListener('DOMContentLoaded', () => {
                         <h3>${escapeHtml(plan.name || (platform ? platform.name : 'خطة'))}</h3>
                         <small class="text-muted">${platform ? escapeHtml(platform.name) : 'غير محدد'} &nbsp;•&nbsp; ${typeBadge}</small>
                     </div>
-                    <span class="status-badge status-${statusInfo.status}">${statusInfo.label}</span>
+                    ${activityBadge}
                 </div>
                 <div class="plan-card-body">
                     <div class="plan-stat">
                         <i class="fa-solid fa-users text-primary"></i>
                         <span>
-                            <strong>${planFin.membersCount}</strong> / ${planFin.maxMembers} مشترك
+                            <strong>${act.activeCount}</strong> نشط / <strong>${act.total}</strong> إجمالي (سعة: ${planFin.maxMembers})
                             ${planFin.planType !== 'private' ? `<small class="text-muted">(${planFin.remainingSlots} مقعد شاغر)</small>` : ''}
                         </span>
                     </div>
@@ -1068,6 +1130,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     </div>
                 </div>
                 <div class="plan-card-actions">
+                    <button class="btn btn-sm btn-outline view-plan-members-btn" data-id="${plan.id}" title="عرض المشتركين الحاليين والمنتهيين">
+                        <i class="fa-solid fa-users-viewfinder text-primary"></i> عرض المشتركين (${act.total})
+                    </button>
                     <button class="btn btn-sm btn-outline edit-plan-btn" data-id="${plan.id}">
                         <i class="fa-solid fa-pen"></i> تعديل
                     </button>
@@ -1079,11 +1144,181 @@ document.addEventListener('DOMContentLoaded', () => {
             grid.appendChild(card);
         });
 
+        grid.querySelectorAll('.view-plan-members-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => { e.stopPropagation(); openPlanMembersModal(btn.dataset.id); });
+        });
         grid.querySelectorAll('.edit-plan-btn').forEach(btn => {
             btn.addEventListener('click', (e) => { e.stopPropagation(); editPlan(btn.dataset.id); });
         });
         grid.querySelectorAll('.delete-plan-btn').forEach(btn => {
             btn.addEventListener('click', (e) => { e.stopPropagation(); deletePlan(btn.dataset.id); });
+        });
+    }
+
+    // Modal: View Plan Members (Active vs Expired)
+    function openPlanMembersModal(planId) {
+        const plan = DataManager.getServicePlanById(planId);
+        if (!plan) return;
+        const platform = DataManager.getPlatformById(plan.platformId);
+        const subs = DataManager.getServicePlanAccounts(planId);
+        const modalTitle = document.getElementById('planMembersModalTitle');
+        if (modalTitle) {
+            modalTitle.innerHTML = `<i class="fa-solid fa-users text-primary"></i> مشتركو خطة: <strong>${escapeHtml(plan.name || (platform ? platform.name : ''))}</strong>`;
+        }
+
+        const activeSubs = [];
+        const expiredSubs = [];
+
+        subs.forEach(acc => {
+            const st = DataManager.getAccountStatus(acc);
+            const cust = DataManager.getCustomerById(acc.customerId);
+            const item = { acc, st, cust };
+            if (st.status === 'active' || st.status === 'warning') activeSubs.push(item);
+            else expiredSubs.push(item);
+        });
+
+        const summaryBox = document.getElementById('planMembersSummary');
+        if (summaryBox) {
+            summaryBox.innerHTML = `
+                <div class="glass-panel" style="flex:1; padding:0.6rem 1rem; border-radius:8px;">
+                    <div class="text-muted" style="font-size:0.8rem;">الإجمالي</div>
+                    <strong style="font-size:1.1rem;">${subs.length} مشترك</strong>
+                </div>
+                <div class="glass-panel" style="flex:1; padding:0.6rem 1rem; border-radius:8px; border-left:3px solid #22c55e;">
+                    <div class="text-muted" style="font-size:0.8rem;">نشطون حالياً</div>
+                    <strong class="text-success" style="font-size:1.1rem;">${activeSubs.length}</strong>
+                </div>
+                <div class="glass-panel" style="flex:1; padding:0.6rem 1rem; border-radius:8px; border-left:3px solid #ef4444;">
+                    <div class="text-muted" style="font-size:0.8rem;">منتهون</div>
+                    <strong class="text-danger" style="font-size:1.1rem;">${expiredSubs.length}</strong>
+                </div>
+            `;
+        }
+
+        const listBox = document.getElementById('planMembersList');
+        if (!listBox) return;
+
+        if (subs.length === 0) {
+            listBox.innerHTML = '<p class="text-muted text-center" style="padding:2rem;">لا يوجد أي مشتركين مسجلين في هذه الخطة حالياً.</p>';
+            openModal('planMembersModal');
+            return;
+        }
+
+        let html = '';
+
+        if (activeSubs.length > 0) {
+            html += `<h4 style="color:#22c55e; margin:1rem 0 0.5rem; font-size:0.95rem;"><i class="fa-solid fa-circle-check"></i> المشتركون النشطون (${activeSubs.length})</h4>`;
+            html += renderMembersSubList(activeSubs);
+        }
+
+        if (expiredSubs.length > 0) {
+            html += `<h4 style="color:#ef4444; margin:1.25rem 0 0.5rem; font-size:0.95rem;"><i class="fa-solid fa-circle-xmark"></i> المشتركون المنتهون (${expiredSubs.length})</h4>`;
+            html += renderMembersSubList(expiredSubs);
+        }
+
+        listBox.innerHTML = html;
+        openModal('planMembersModal');
+    }
+
+    function renderMembersSubList(items) {
+        return items.map(({ acc, st, cust }) => `
+            <div style="display:flex; justify-content:space-between; align-items:center; padding:0.6rem 0.75rem; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.06); border-radius:8px; margin-bottom:0.4rem;">
+                <div>
+                    <strong>${escapeHtml(cust ? cust.name : (acc.customerName || 'مشترك'))}</strong>
+                    <small class="text-muted" style="display:block;">${escapeHtml(cust ? cust.phone : '')} &nbsp;•&nbsp; مدفوع: ${Number(acc.revenue || 0).toLocaleString('ar-EG')} ج.م</small>
+                </div>
+                <div style="text-align:left;">
+                    <span class="status-badge status-${st.status}">${st.label}</span>
+                    <small style="display:block; margin-top:2px;" class="${st.daysLeft <= 3 ? 'text-danger' : 'text-muted'}">
+                        ${st.status === 'expired' ? 'انتهى' : `متبقي ${st.daysLeft} يوم`}
+                    </small>
+                </div>
+            </div>
+        `).join('');
+    }
+
+    // Modal: Plan Merger UI
+    const btnOpenPlanMerger = document.getElementById('btnOpenPlanMerger');
+    if (btnOpenPlanMerger) {
+        btnOpenPlanMerger.addEventListener('click', () => {
+            const plans = DataManager.getServicePlans();
+            if (plans.length < 2) {
+                Swal.fire({ icon: 'info', title: 'تنبيه', text: 'تحتاج إلى خطتين على الأقل لإجراء عملية الدمج.', background: '#111827', color: '#fff' });
+                return;
+            }
+
+            const targetSelect = document.getElementById('mergerTargetPlan');
+            const sourceContainer = document.getElementById('mergerSourcePlans');
+            if (!targetSelect || !sourceContainer) return;
+
+            targetSelect.innerHTML = '<option value="" disabled selected>اختر الخطة الرئيسية التي ستدمج إليها...</option>';
+            plans.forEach(p => {
+                const plat = DataManager.getPlatformById(p.platformId);
+                const subCount = DataManager.getServicePlanMembersCount(p.id);
+                targetSelect.innerHTML += `<option value="${p.id}">${escapeHtml(p.name)} (${plat ? plat.name : ''} - ${subCount} مشترك)</option>`;
+            });
+
+            function updateSources() {
+                const targetId = targetSelect.value;
+                sourceContainer.innerHTML = '';
+                plans.filter(p => p.id !== targetId).forEach(p => {
+                    const plat = DataManager.getPlatformById(p.platformId);
+                    const subCount = DataManager.getServicePlanMembersCount(p.id);
+                    sourceContainer.innerHTML += `
+                        <label style="display:flex; align-items:center; gap:0.5rem; padding:0.4rem 0; border-bottom:1px solid rgba(255,255,255,0.05); cursor:pointer;">
+                            <input type="checkbox" name="mergerSourceCb" value="${p.id}">
+                            <span><strong>${escapeHtml(p.name)}</strong> <small class="text-muted">(${plat ? plat.name : ''} • ${subCount} مشترك)</small></span>
+                        </label>
+                    `;
+                });
+            }
+
+            targetSelect.onchange = updateSources;
+            updateSources();
+            openModal('planMergerModal');
+        });
+    }
+
+    // Execute Plan Merger
+    const btnExecutePlanMerge = document.getElementById('btnExecutePlanMerge');
+    if (btnExecutePlanMerge) {
+        btnExecutePlanMerge.addEventListener('click', async () => {
+            const targetId = document.getElementById('mergerTargetPlan').value;
+            const checkedSources = Array.from(document.querySelectorAll('input[name="mergerSourceCb"]:checked')).map(cb => cb.value);
+
+            if (!targetId || checkedSources.length === 0) {
+                Swal.fire({ icon: 'error', title: 'بيانات ناقصة', text: 'يرجى اختيار الخطة الرئيسية وتحديد خطة مكررة واحدة على الأقل لدمجها.', background: '#111827', color: '#fff' });
+                return;
+            }
+
+            const targetPlan = DataManager.getServicePlanById(targetId);
+            const res = await Swal.fire({
+                title: 'تأكيد الدمج النهائي؟',
+                text: `سيتم نقل جميع المشتركين من ${checkedSources.length} خطط إلى خطة (${targetPlan.name})، ثم حذف الخطط القديمة المكررة دون أي فقدان لحسابات أو تواريخ المشتركين.`,
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonText: 'نعم، نفّذ الدمج الآن',
+                cancelButtonText: 'إلغاء',
+                background: '#111827',
+                color: '#fff'
+            });
+
+            if (res.isConfirmed) {
+                let movedCount = 0;
+                for (const srcId of checkedSources) {
+                    const accs = DataManager.getAccounts().filter(a => a.servicePlanId === srcId);
+                    for (const acc of accs) {
+                        await DataManager.updateAccount({ id: acc.id, servicePlanId: targetId });
+                        movedCount++;
+                    }
+                    await DataManager.deleteServicePlan(srcId);
+                }
+
+                closeModal('planMergerModal');
+                renderPlans();
+                renderAccounts();
+                showToast(`تم بنجاح دمج ونقل ${movedCount} مشترك وتوحيد الخطط!`);
+            }
         });
     }
 
