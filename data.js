@@ -469,7 +469,6 @@ class DataManager {
             });
         }
     }
-    }
 }
 
 DataManager.init();
