@@ -2100,7 +2100,7 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('accPassword').value = acc.password || '';
         document.getElementById('accStartDate').value = acc.startDate;
         document.getElementById('accDurationDays').value = acc.durationDays || 30;
-        
+
         // Match durationType
         const durTypeSel = document.getElementById('accDurationType');
         const customDaysGroup = document.getElementById('accCustomDaysGroup');
