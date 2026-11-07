@@ -936,6 +936,32 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!selectedId) select.selectedIndex = 0;
     }
 
+    // Plan type dynamic UI change
+    const planTypeSelect = document.getElementById('planType');
+    if (planTypeSelect) {
+        planTypeSelect.addEventListener('change', (e) => {
+            const val = e.target.value;
+            const wrap = document.getElementById('groupMaxMembersWrap');
+            const lbl = document.getElementById('groupMaxMembersLabel');
+            const hint = document.getElementById('groupMaxMembersHint');
+            const inp = document.getElementById('planMaxMembers');
+            if (val === 'private') {
+                if (wrap) wrap.style.display = 'none';
+                if (inp) inp.value = 1;
+            } else if (val === 'group') {
+                if (wrap) wrap.style.display = 'block';
+                if (lbl) lbl.innerText = 'عدد أفراد المجموعة (حساب مشترك)';
+                if (hint) hint.innerText = 'عدد الأشخاص الذين سيتشاركون نفس بيانات الحساب';
+                if (inp && (!inp.value || inp.value == 1)) inp.value = 4;
+            } else if (val === 'family') {
+                if (wrap) wrap.style.display = 'block';
+                if (lbl) lbl.innerText = 'عدد مقاعد العائلة المتاحة';
+                if (hint) hint.innerText = 'عدد الأعضاء المدعوين بإيميلاتهم المنفصلة';
+                if (inp && (!inp.value || inp.value == 1)) inp.value = 6;
+            }
+        });
+    }
+
     function renderPlans() {
         const grid = document.getElementById('plansGrid');
         const emptyState = document.getElementById('plansEmptyState');
@@ -952,11 +978,27 @@ document.addEventListener('DOMContentLoaded', () => {
 
         plans.forEach(plan => {
             const platform = DataManager.getPlatformById(plan.platformId);
-            const membersCount = DataManager.getServicePlanMembersCount(plan.id);
-            const statusInfo = DataManager.getAccountStatus({ startDate: plan.startDate, durationDays: plan.durationDays || 365 });
             const planFin = DataManager.getPlanFinancials(plan.id);
+            const statusInfo = DataManager.getAccountStatus({ startDate: plan.startDate, durationDays: plan.durationDays || 365 });
 
             const maskedEmail = plan.email ? plan.email.replace(/(.{2})(.*)(@.*)/, '$1***$3') : '—';
+
+            // Plan type badge
+            let typeBadge = '';
+            if (planFin.planType === 'private') {
+                typeBadge = '<span class="status-badge" style="background:rgba(59,130,246,0.15);color:#3b82f6;"><i class="fa-solid fa-user-lock"></i> خاصة</span>';
+            } else if (planFin.planType === 'group') {
+                typeBadge = '<span class="status-badge" style="background:rgba(234,179,8,0.15);color:#eab308;"><i class="fa-solid fa-users"></i> مجموعة</span>';
+            } else {
+                typeBadge = '<span class="status-badge" style="background:rgba(168,85,247,0.15);color:#a855f7;"><i class="fa-solid fa-people-roof"></i> عائلة</span>';
+            }
+
+            // Cost label
+            let costLabel = '';
+            if (plan.monthlyCost) costLabel += `${Number(plan.monthlyCost).toLocaleString('ar-EG')} ج.م شهرياً `;
+            if (plan.yearlyCost) costLabel += `${Number(plan.yearlyCost).toLocaleString('ar-EG')} ج.م سنوياً `;
+            if (!costLabel && plan.registrationCost) costLabel = `${Number(plan.registrationCost).toLocaleString('ar-EG')} ج.م`;
+            if (!costLabel) costLabel = '0 ج.م';
 
             const card = document.createElement('div');
             card.className = 'plan-card glass-panel';
@@ -967,24 +1009,46 @@ document.addEventListener('DOMContentLoaded', () => {
                     </div>
                     <div class="plan-header-info">
                         <h3>${escapeHtml(plan.name || (platform ? platform.name : 'خطة'))}</h3>
-                        <small class="text-muted">${platform ? escapeHtml(platform.name) : 'غير محدد'}</small>
+                        <small class="text-muted">${platform ? escapeHtml(platform.name) : 'غير محدد'} &nbsp;•&nbsp; ${typeBadge}</small>
                     </div>
                     <span class="status-badge status-${statusInfo.status}">${statusInfo.label}</span>
                 </div>
                 <div class="plan-card-body">
-                    <div class="plan-stat"><i class="fa-solid fa-users text-primary"></i> <span>${membersCount} عضو</span></div>
-                    <div class="plan-stat"><i class="fa-solid fa-tag text-success"></i> <span>${Number(plan.pricePerMember || 0).toLocaleString('ar-EG')} ج.م / عضو</span></div>
-                    <div class="plan-stat"><i class="fa-solid fa-calendar-day text-info"></i> <span>${plan.startDate || '—'}</span></div>
-                    <div class="plan-stat"><i class="fa-solid fa-envelope text-muted"></i> <span>${escapeHtml(maskedEmail)}</span></div>
-                    ${plan.registrationCost ? `<div class="plan-stat"><i class="fa-solid fa-receipt text-warning"></i> <span>تكلفة الخطة: ${Number(plan.registrationCost).toLocaleString('ar-EG')} ج.م</span></div>` : ''}
-                    <div class="plan-stat" style="border-top:1px solid rgba(255,255,255,0.06); padding-top:0.5rem; margin-top:0.3rem;">
-                        <i class="fa-solid fa-coins text-success"></i>
-                        <span>محصّل: <strong class="text-success">${Number(planFin.totalRevenue).toLocaleString('ar-EG')}</strong> ج.م</span>
+                    <div class="plan-stat">
+                        <i class="fa-solid fa-users text-primary"></i>
+                        <span>
+                            <strong>${planFin.membersCount}</strong> / ${planFin.maxMembers} مشترك
+                            ${planFin.planType !== 'private' ? `<small class="text-muted">(${planFin.remainingSlots} مقعد شاغر)</small>` : ''}
+                        </span>
                     </div>
-                    ${plan.registrationCost ? `<div class="plan-stat">
-                        <i class="fa-solid fa-chart-line ${planFin.netProfit >= 0 ? 'text-success' : 'text-danger'}"></i>
-                        <span>صافي: <strong class="${planFin.netProfit >= 0 ? 'text-success' : 'text-danger'}">${planFin.netProfit >= 0 ? '+' : ''}${Number(planFin.netProfit).toLocaleString('ar-EG')}</strong> ج.م</span>
+
+                    <div class="plan-stat">
+                        <i class="fa-solid fa-receipt text-warning"></i>
+                        <span>تكلفتك الأساسية: <strong>${costLabel}</strong></span>
+                    </div>
+
+                    ${plan.priceMonthly || plan.pricePerMember ? `
+                    <div class="plan-stat">
+                        <i class="fa-solid fa-tag text-success"></i>
+                        <span>سعر البيع: <strong>${Number(plan.priceMonthly || plan.pricePerMember || 0).toLocaleString('ar-EG')}</strong> ج.م / شهر</span>
                     </div>` : ''}
+
+                    <div class="plan-stat"><i class="fa-solid fa-envelope text-muted"></i> <span>${escapeHtml(maskedEmail)}</span></div>
+
+                    <!-- Break-even progress bar -->
+                    <div style="margin-top:0.75rem; padding:0.6rem; background:rgba(255,255,255,0.03); border-radius:8px; border:1px solid rgba(255,255,255,0.06);">
+                        <div style="display:flex; justify-content:space-between; font-size:0.8rem; margin-bottom:0.35rem;">
+                            <span>تغطية التكلفة (نقطة التعادل):</span>
+                            <strong>${planFin.breakEvenPercent}%</strong>
+                        </div>
+                        <div style="background:rgba(255,255,255,0.1); height:6px; border-radius:3px; overflow:hidden;">
+                            <div style="width:${planFin.breakEvenPercent}%; background:${planFin.isProfitable ? '#22c55e' : '#eab308'}; height:100%; transition:width 0.3s;"></div>
+                        </div>
+                        <div style="display:flex; justify-content:space-between; font-size:0.8rem; margin-top:0.4rem;">
+                            <span>محصّل: <strong class="text-success">${Number(planFin.netCollected).toLocaleString('ar-EG')} ج.م</strong></span>
+                            <span>صافي: <strong class="${planFin.netProfit >= 0 ? 'text-success' : 'text-danger'}">${planFin.netProfit >= 0 ? '+' : ''}${Number(planFin.netProfit).toLocaleString('ar-EG')} ج.م</strong></span>
+                        </div>
+                    </div>
                 </div>
                 <div class="plan-card-actions">
                     <button class="btn btn-sm btn-outline edit-plan-btn" data-id="${plan.id}">
@@ -1016,6 +1080,13 @@ document.addEventListener('DOMContentLoaded', () => {
         const passInput = document.getElementById('planPassword');
         if (passInput) passInput.type = 'password';
         populatePlanPlatformsDropdown('');
+
+        const typeSel = document.getElementById('planType');
+        if (typeSel) {
+            typeSel.value = 'group';
+            typeSel.dispatchEvent(new Event('change'));
+        }
+
         openModal('planModal');
     }
 
@@ -1030,8 +1101,36 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('planEmail').value = plan.email || '';
         document.getElementById('planPassword').value = plan.password || '';
         document.getElementById('planPassword').type = 'password';
-        document.getElementById('planRegistrationCost').value = plan.registrationCost || '';
-        document.getElementById('planPricePerMember').value = plan.pricePerMember || '';
+
+        // Plan type and limits
+        const typeSel = document.getElementById('planType');
+        if (typeSel) {
+            typeSel.value = plan.planType || (plan.pricePerMember ? 'group' : 'private');
+            typeSel.dispatchEvent(new Event('change'));
+        }
+        const maxMemInp = document.getElementById('planMaxMembers');
+        if (maxMemInp) maxMemInp.value = plan.maxMembers || 4;
+
+        // Costs
+        const billCycle = document.getElementById('planBillingCycle');
+        if (billCycle) billCycle.value = plan.billingCycle || 'monthly';
+        const mCost = document.getElementById('planMonthlyCost');
+        if (mCost) mCost.value = plan.monthlyCost || '';
+        const yCost = document.getElementById('planYearlyCost');
+        if (yCost) yCost.value = plan.yearlyCost || '';
+        const regCost = document.getElementById('planRegistrationCost');
+        if (regCost) regCost.value = plan.registrationCost || '';
+
+        // Selling prices
+        const pM = document.getElementById('planPriceMonthly');
+        if (pM) pM.value = plan.priceMonthly || plan.pricePerMember || '';
+        const pQ = document.getElementById('planPriceQuarterly');
+        if (pQ) pQ.value = plan.priceQuarterly || '';
+        const pS = document.getElementById('planPriceSemiAnnual');
+        if (pS) pS.value = plan.priceSemiAnnual || '';
+        const pY = document.getElementById('planPriceYearly');
+        if (pY) pY.value = plan.priceYearly || '';
+
         document.getElementById('planNotes').value = plan.notes || '';
         document.getElementById('planModalTitle').innerText = 'تعديل خطة الاشتراك';
         openModal('planModal');
@@ -1040,22 +1139,44 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('btnSavePlan').addEventListener('click', async (e) => {
         e.preventDefault();
         const platformId = document.getElementById('planPlatform').value;
-        const startDate = document.getElementById('planStartDate').value;
+        const name = document.getElementById('planName').value.trim();
 
-        if (!platformId || !startDate) {
-            Swal.fire({ icon: 'error', title: 'بيانات ناقصة', text: 'يرجى اختيار المنصة وتاريخ البدء على الأقل', background: '#111827', color: '#fff' });
+        if (!platformId || !name) {
+            Swal.fire({ icon: 'error', title: 'بيانات ناقصة', text: 'يرجى اختيار المنصة وكتابة اسم الخطة على الأقل', background: '#111827', color: '#fff' });
             return;
         }
 
+        const planType = document.getElementById('planType').value;
+        const maxMembers = planType === 'private' ? 1 : (parseInt(document.getElementById('planMaxMembers').value) || 4);
+
+        const monthlyCost = parseFloat(document.getElementById('planMonthlyCost').value) || 0;
+        const yearlyCost = parseFloat(document.getElementById('planYearlyCost').value) || 0;
+        const registrationCost = parseFloat(document.getElementById('planRegistrationCost').value) || 0;
+        const billingCycle = document.getElementById('planBillingCycle').value;
+
+        const priceMonthly = parseFloat(document.getElementById('planPriceMonthly').value) || 0;
+        const priceQuarterly = parseFloat(document.getElementById('planPriceQuarterly').value) || 0;
+        const priceSemiAnnual = parseFloat(document.getElementById('planPriceSemiAnnual').value) || 0;
+        const priceYearly = parseFloat(document.getElementById('planPriceYearly').value) || 0;
+
         const planData = {
             platformId,
-            name: document.getElementById('planName').value.trim(),
-            startDate,
+            name,
+            planType,
+            maxMembers,
+            billingCycle,
+            monthlyCost,
+            yearlyCost,
+            registrationCost: registrationCost || (billingCycle === 'yearly' ? yearlyCost : monthlyCost),
+            priceMonthly,
+            priceQuarterly,
+            priceSemiAnnual,
+            priceYearly,
+            pricePerMember: priceMonthly, // backward compatibility
+            startDate: document.getElementById('planStartDate').value || new Date().toISOString().split('T')[0],
             durationDays: parseInt(document.getElementById('planDurationDays').value) || 365,
             email: document.getElementById('planEmail').value.trim(),
             password: document.getElementById('planPassword').value,
-            registrationCost: parseFloat(document.getElementById('planRegistrationCost').value) || 0,
-            pricePerMember: parseFloat(document.getElementById('planPricePerMember').value) || 0,
             notes: document.getElementById('planNotes').value.trim()
         };
 
@@ -1577,6 +1698,63 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!selectedId) select.selectedIndex = 0;
     }
 
+    // Duration type change handler in Account Modal
+    const accDurationTypeSelect = document.getElementById('accDurationType');
+    if (accDurationTypeSelect) {
+        accDurationTypeSelect.addEventListener('change', (e) => {
+            const val = e.target.value;
+            const durInp = document.getElementById('accDurationDays');
+            const customGroup = document.getElementById('accCustomDaysGroup');
+            if (val === 'monthly') {
+                if (durInp) durInp.value = 30;
+                if (customGroup) customGroup.style.display = 'none';
+            } else if (val === 'quarterly') {
+                if (durInp) durInp.value = 90;
+                if (customGroup) customGroup.style.display = 'none';
+            } else if (val === 'semiannual') {
+                if (durInp) durInp.value = 180;
+                if (customGroup) customGroup.style.display = 'none';
+            } else if (val === 'yearly') {
+                if (durInp) durInp.value = 365;
+                if (customGroup) customGroup.style.display = 'none';
+            } else if (val === 'custom') {
+                if (customGroup) customGroup.style.display = 'block';
+            }
+            // Recalculate price suggestion based on selected plan and duration
+            updateSuggestedAccountPrice();
+        });
+    }
+
+    function updateSuggestedAccountPrice() {
+        const selectedIds = getSelectedPlanIds();
+        if (selectedIds.length === 0) return;
+        const plan = DataManager.getServicePlanById(selectedIds[0]);
+        if (!plan) return;
+
+        const durType = document.getElementById('accDurationType') ? document.getElementById('accDurationType').value : 'monthly';
+        const revInput = document.getElementById('accRevenue');
+        if (!revInput) return;
+
+        let suggestedPrice = 0;
+        if (durType === 'monthly') {
+            suggestedPrice = plan.priceMonthly || plan.pricePerMember || (plan.monthlyCost ? (plan.monthlyCost / (plan.maxMembers || 1)) : 0);
+        } else if (durType === 'quarterly') {
+            suggestedPrice = plan.priceQuarterly || ((plan.priceMonthly || plan.pricePerMember || 0) * 3);
+        } else if (durType === 'semiannual') {
+            suggestedPrice = plan.priceSemiAnnual || ((plan.priceMonthly || plan.pricePerMember || 0) * 6);
+        } else if (durType === 'yearly') {
+            suggestedPrice = plan.priceYearly || ((plan.priceMonthly || plan.pricePerMember || 0) * 12);
+        } else if (durType === 'custom') {
+            const days = parseInt(document.getElementById('accDurationDays').value) || 30;
+            const mPrice = plan.priceMonthly || plan.pricePerMember || 0;
+            suggestedPrice = Math.round((mPrice / 30) * days);
+        }
+
+        if (suggestedPrice > 0) {
+            revInput.value = suggestedPrice;
+        }
+    }
+
     function populatePlansCheckboxes(selectedIds) {
         const container = document.getElementById('accPlansCheckboxes');
         if (!container) return;
@@ -1595,9 +1773,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
         plans.forEach(plan => {
             const platform = DataManager.getPlatformById(plan.platformId);
+            const planFin = DataManager.getPlanFinancials(plan.id);
             const isChecked = selArr.includes(plan.id);
             const label = (plan.name || (platform ? platform.name : 'خطة'));
             const platName = platform ? platform.name : '';
+
+            let typeText = 'خاصة';
+            if (planFin.planType === 'group') typeText = `مجموعة (${planFin.remainingSlots} مقعد شاغر)`;
+            else if (planFin.planType === 'family') typeText = `عائلة (${planFin.remainingSlots} مقعد شاغر)`;
+
+            const priceDisplay = plan.priceMonthly || plan.pricePerMember || 0;
+
             html += `<label class="plan-checkbox-item${isChecked ? ' checked' : ''}">
                 <input type="checkbox" name="accPlanCb" value="${plan.id}" ${isChecked ? 'checked' : ''}>
                 <div class="plan-cb-icon" style="background:${platform ? platform.color + '25' : '#33333355'};color:${platform ? platform.color : '#fff'};">
@@ -1605,9 +1791,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 </div>
                 <div class="plan-cb-info">
                     <strong>${escapeHtml(label)}</strong>
-                    <small>${escapeHtml(platName)}</small>
+                    <small>${escapeHtml(platName)} &nbsp;•&nbsp; ${typeText}</small>
                 </div>
-                <span class="plan-cb-price">${Number(plan.pricePerMember || 0).toLocaleString('ar-EG')} ج.م</span>
+                <span class="plan-cb-price">${Number(priceDisplay).toLocaleString('ar-EG')} ج.م / شهر</span>
             </label>`;
         });
 
@@ -1623,7 +1809,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 noPlanCb.closest('.plan-checkbox-item').classList.add('checked');
                 handlePlanCheckboxChange();
             } else {
-                noPlanCb.checked = true; // can't uncheck without selecting something
+                noPlanCb.checked = true;
             }
         });
 
@@ -1659,39 +1845,40 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        // Auto-fill from first selected plan
         const plan = DataManager.getServicePlanById(selectedIds[0]);
         if (!plan) return;
 
         // Auto-fill platform
         if (plan.platformId) populatePlatformsDropdown(plan.platformId);
-        // Auto-fill duration
-        const durInput = document.getElementById('accDurationDays');
-        if (durInput && plan.durationDays) durInput.value = plan.durationDays;
-        // Auto-fill revenue (price per member)
-        const revInput = document.getElementById('accRevenue');
-        if (revInput && plan.pricePerMember) revInput.value = plan.pricePerMember;
+
+        // Update suggested price according to current duration selection
+        updateSuggestedAccountPrice();
+
         // Auto-fill credentials
         const userInput = document.getElementById('accUsername');
-        if (userInput && plan.email) userInput.value = plan.email;
+        if (userInput && plan.email && !userInput.value) userInput.value = plan.email;
         const passInput = document.getElementById('accPassword');
-        if (passInput && plan.password) passInput.value = plan.password;
+        if (passInput && plan.password && !passInput.value) passInput.value = plan.password;
 
-        // Show banner
+        // Show banner with plan details
         if (banner) {
             const platform = DataManager.getPlatformById(plan.platformId);
+            const planFin = DataManager.getPlanFinancials(plan.id);
             if (selectedIds.length === 1) {
                 banner.style.display = 'block';
+                let slotInfo = '';
+                if (planFin.planType !== 'private') {
+                    slotInfo = ` &nbsp;|&nbsp; المقاعد الشاغرة: <strong>${planFin.remainingSlots}</strong> من ${planFin.maxMembers}`;
+                }
                 banner.innerHTML = `
                     <i class="fa-solid fa-circle-info text-primary"></i>
-                    <span>تم تعبئة البيانات من خطة: <strong>${escapeHtml(plan.name || (platform ? platform.name : 'الخطة'))}</strong>
-                    — يمكنك تعديل أي حقل.</span>
+                    <span>الخطة: <strong>${escapeHtml(plan.name || (platform ? platform.name : 'الخطة'))}</strong> (${planFin.planType === 'private' ? 'خاصة' : (planFin.planType === 'group' ? 'مجموعة' : 'عائلة')})${slotInfo}</span>
                 `;
             } else {
                 banner.style.display = 'block';
                 banner.innerHTML = `
                     <i class="fa-solid fa-circle-info text-primary"></i>
-                    <span>تم اختيار <strong>${selectedIds.length} خطط</strong>. سيتم إنشاء اشتراك منفصل لكل خطة عند الحفظ.</span>
+                    <span>تم اختيار <strong>${selectedIds.length} خطط</strong>. سيتم إنشاء اشتراك منفصل لكل خطة.</span>
                 `;
             }
         }
@@ -1836,16 +2023,18 @@ document.addEventListener('DOMContentLoaded', () => {
             username: document.getElementById('accUsername').value.trim(),
             password: document.getElementById('accPassword').value,
             startDate,
-            durationDays,
-            revenue,
+            durationDays: parseInt(durationDays) || 30,
+            revenue: parseFloat(revenue) || 0,
             refund: document.getElementById('accRefund').value || '0',
             activationCode: document.getElementById('accActivationCode').value.trim(),
             notes: document.getElementById('accNotes').value.trim(),
-            isPaid: isPaidCheck ? isPaidCheck.checked : false
+            isPaid: isPaidCheck ? isPaidCheck.checked : false,
+            // Snapshot duration type
+            durationType: document.getElementById('accDurationType') ? document.getElementById('accDurationType').value : 'monthly'
         };
 
         if (accId) {
-            // EDITING existing subscription
+            // EDITING existing subscription (Preserve snapshot unless modified)
             baseData.id = accId;
             baseData.servicePlanId = selectedPlanIds.length > 0 ? selectedPlanIds[0] : '';
             await DataManager.updateAccount(baseData);
@@ -1860,10 +2049,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     accountData.servicePlanId = planId;
                     if (plan) {
                         accountData.platformId = plan.platformId || platformId;
-                        accountData.durationDays = plan.durationDays || durationDays;
-                        accountData.revenue = plan.pricePerMember || revenue;
-                        if (plan.email) accountData.username = plan.email;
-                        if (plan.password) accountData.password = plan.password;
+                        if (plan.email && !accountData.username) accountData.username = plan.email;
+                        if (plan.password && !accountData.password) accountData.password = plan.password;
                     }
                     await DataManager.addAccount(accountData);
                 }
@@ -1913,6 +2100,30 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('accPassword').value = acc.password || '';
         document.getElementById('accStartDate').value = acc.startDate;
         document.getElementById('accDurationDays').value = acc.durationDays || 30;
+        
+        // Match durationType
+        const durTypeSel = document.getElementById('accDurationType');
+        const customDaysGroup = document.getElementById('accCustomDaysGroup');
+        const dDays = parseInt(acc.durationDays) || 30;
+        if (durTypeSel) {
+            if (acc.durationType) {
+                durTypeSel.value = acc.durationType;
+            } else if (dDays === 30) {
+                durTypeSel.value = 'monthly';
+            } else if (dDays === 90) {
+                durTypeSel.value = 'quarterly';
+            } else if (dDays === 180) {
+                durTypeSel.value = 'semiannual';
+            } else if (dDays === 365) {
+                durTypeSel.value = 'yearly';
+            } else {
+                durTypeSel.value = 'custom';
+            }
+            if (customDaysGroup) {
+                customDaysGroup.style.display = durTypeSel.value === 'custom' ? 'block' : 'none';
+            }
+        }
+
         document.getElementById('accRevenue').value = acc.revenue || 0;
         document.getElementById('accRefund').value = acc.refund || 0;
         document.getElementById('accActivationCode').value = acc.activationCode || '';

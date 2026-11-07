@@ -153,12 +153,68 @@ class DataManager {
     }
     static getPlanFinancials(planId) {
         const plan = this.getServicePlanById(planId);
-        if (!plan) return { totalRevenue: 0, planCost: 0, netProfit: 0, membersCount: 0 };
+        if (!plan) return {
+            totalRevenue: 0,
+            planCost: 0,
+            netProfit: 0,
+            membersCount: 0,
+            planType: 'private',
+            maxMembers: 1,
+            remainingSlots: 0,
+            breakEvenPercent: 0,
+            isProfitable: false
+        };
+
         const members = this.getServicePlanAccounts(planId);
         let totalRevenue = 0;
-        members.forEach(acc => totalRevenue += parseFloat(acc.revenue || 0));
-        const planCost = parseFloat(plan.registrationCost || 0);
-        return { totalRevenue, planCost, netProfit: totalRevenue - planCost, membersCount: members.length };
+        let totalRefunds = 0;
+        members.forEach(acc => {
+            totalRevenue += parseFloat(acc.revenue || 0);
+            totalRefunds += parseFloat(acc.refund || 0);
+        });
+
+        const netCollected = totalRevenue - totalRefunds;
+
+        // Plan type fallback: 'private' (خاصة), 'group' (مجموعة), 'family' (عائلة)
+        const planType = plan.planType || (plan.pricePerMember ? 'group' : 'private');
+
+        // Determine cost: support new monthly/yearly cost structure or fallback to registrationCost
+        let planCost = 0;
+        if (plan.billingCycle === 'yearly') {
+            planCost = parseFloat(plan.yearlyCost || plan.registrationCost || 0);
+        } else if (plan.billingCycle === 'monthly') {
+            planCost = parseFloat(plan.monthlyCost || plan.registrationCost || 0);
+        } else {
+            planCost = parseFloat(plan.registrationCost || plan.yearlyCost || plan.monthlyCost || 0);
+        }
+
+        // Slots calculation
+        let maxMembers = 1;
+        if (planType === 'private') {
+            maxMembers = 1;
+        } else if (planType === 'family') {
+            maxMembers = parseInt(plan.maxMembers || plan.familySlots || 6);
+        } else if (planType === 'group') {
+            maxMembers = parseInt(plan.maxMembers || 4);
+        }
+
+        const remainingSlots = Math.max(0, maxMembers - members.length);
+        const netProfit = netCollected - planCost;
+        const breakEvenPercent = planCost > 0 ? Math.min(100, Math.round((netCollected / planCost) * 100)) : (netCollected > 0 ? 100 : 0);
+
+        return {
+            totalRevenue,
+            totalRefunds,
+            netCollected,
+            planCost,
+            netProfit,
+            membersCount: members.length,
+            planType,
+            maxMembers,
+            remainingSlots,
+            breakEvenPercent,
+            isProfitable: netProfit >= 0
+        };
     }
 
     static async addServicePlan(plan) {
@@ -324,9 +380,10 @@ class DataManager {
             else stats.expiredAccounts++;
         });
 
-        // Cost from plans (registrationCost)
+        // Cost from plans using dynamic financials
         this.servicePlans.forEach(plan => {
-            stats.totalCost += parseFloat(plan.registrationCost || 0);
+            const fin = this.getPlanFinancials(plan.id);
+            stats.totalCost += fin.planCost;
         });
 
         stats.netProfit = stats.totalRevenue - stats.totalCost - stats.totalRefunds;
@@ -362,52 +419,42 @@ class DataManager {
     static async cleanupDatabase() {
         if (!this.isFirebaseReady) return;
 
-        console.log("Starting database cleanup... Merging duplicates and replacing Claude with ChatGPT.");
+        console.log("Starting database cleanup... Merging duplicates and normalizing plans.");
         try {
             const platforms = [...this.platforms];
             const plans = [...this.servicePlans];
             const accounts = [...this.accounts];
 
-            const platformGroups = {};
-            platforms.forEach(p => {
-                let name = p.name ? p.name.trim().toLowerCase() : '';
-                if (name === 'claude') name = 'chatgpt';
-
-                if (!platformGroups[name]) platformGroups[name] = [];
-                platformGroups[name].push(p);
+            // 1. Group duplicate plans by platform + plan name
+            const planGroups = {};
+            plans.forEach(plan => {
+                const key = (plan.platformId || '') + '_' + (plan.name || '').trim().toLowerCase();
+                if (!planGroups[key]) planGroups[key] = [];
+                planGroups[key].push(plan);
             });
 
-            for (const [name, group] of Object.entries(platformGroups)) {
+            let mergedPlansCount = 0;
+            for (const [key, group] of Object.entries(planGroups)) {
                 if (group.length > 1) {
-                    group.sort((a, b) => {
-                        if (a.icon === 'fa-solid fa-robot' && b.icon !== 'fa-solid fa-robot') return -1;
-                        if (b.icon === 'fa-solid fa-robot' && a.icon !== 'fa-solid fa-robot') return 1;
-                        return 0; // retain first if same priority
-                    });
-
                     const primary = group[0];
                     const duplicates = group.slice(1);
 
                     for (const dup of duplicates) {
-                        const plansToUpdate = plans.filter(p => p.platformId === dup.id);
-                        for (const plan of plansToUpdate) {
-                            await this.updateServicePlan({ id: plan.id, platformId: primary.id });
+                        const accsToUpdate = accounts.filter(a => a.servicePlanId === dup.id);
+                        for (const acc of accsToUpdate) {
+                            await this.updateAccount({ id: acc.id, servicePlanId: primary.id });
                         }
-
-                        const accountsToUpdate = accounts.filter(a => a.platformId === dup.id);
-                        for (const acc of accountsToUpdate) {
-                            await this.updateAccount({ id: acc.id, platformId: primary.id });
-                        }
-
-                        await this.deletePlatform(dup.id);
-                        console.log(`Merged and deleted duplicate platform: ${dup.name} (${dup.id}) into ${primary.name} (${primary.id})`);
+                        await this.deleteServicePlan(dup.id);
+                        mergedPlansCount++;
                     }
                 }
             }
 
             Swal.fire({
-                title: 'تم التنظيف!',
-                text: 'تمت إزالة الخدمات المكررة ودمج Claude إلى ChatGPT بنجاح.',
+                title: 'تم الدمج والتنظيف!',
+                text: mergedPlansCount > 0 
+                    ? `تم دمج ${mergedPlansCount} خطة مكررة وتوجيه اشتراكاتها للخطط الموحدة بنجاح دون أي مساس ببيانات العملاء.`
+                    : 'الخطط موحدة بالفعل ولا توجد خطط مكررة متطابقة.',
                 icon: 'success',
                 confirmButtonText: 'حسناً'
             });
@@ -421,6 +468,7 @@ class DataManager {
                 confirmButtonText: 'حسناً'
             });
         }
+    }
     }
 }
 

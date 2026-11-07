@@ -551,7 +551,7 @@
                     <!-- Plan selection -->
                     <div class="form-section-title">اختر الخطة / الخطط</div>
                     <div class="form-group full-width">
-                        <label>خطط الاشتراك <small class="text-muted">(يمكنك اختيار أكثر من خطة)</small></label>
+                        <label>خطط الاشتراك المتاحة <small class="text-muted">(يتم احتساب السعر تلقائياً)</small></label>
                         <div id="accPlansCheckboxes" class="plans-checkboxes-container"></div>
                         <input type="hidden" id="accPlan" value="">
                     </div>
@@ -561,7 +561,7 @@
                     </div>
 
                     <!-- Customer & Platform -->
-                    <div class="form-section-title">المشترك والخدمة</div>
+                    <div class="form-section-title">المشترك والخدمة والمدة</div>
                     <div class="form-group">
                         <label>المشترك <span class="text-danger">*</span></label>
                         <div class="select-with-action">
@@ -577,12 +577,28 @@
                         <select id="accPlatform" required class="form-control"></select>
                     </div>
 
+                    <div class="form-group">
+                        <label>مدة الاشتراك <span class="text-danger">*</span></label>
+                        <select id="accDurationType" class="form-control">
+                            <option value="monthly" selected>شهري (30 يوم)</option>
+                            <option value="quarterly">ربع سنوي (90 يوم)</option>
+                            <option value="semiannual">نصف سنوي (180 يوم)</option>
+                            <option value="yearly">سنوي (365 يوم)</option>
+                            <option value="custom">مخصص (أيام أخرى)</option>
+                        </select>
+                    </div>
+                    <div class="form-group" id="accCustomDaysGroup" style="display:none;">
+                        <label>عدد الأيام المخصص</label>
+                        <input type="number" id="accDurationDays" class="form-control" value="30" min="1">
+                    </div>
+
                     <!-- Price & Payment -->
                     <div class="form-section-title">المالية والسداد</div>
                     <div class="form-group">
-                        <label>سعر الاشتراك (ج.م) <span class="text-danger">*</span></label>
+                        <label>سعر الاشتراك للمشترك (ج.م) <span class="text-danger">*</span></label>
                         <input type="number" id="accRevenue" required class="form-control" value="0" min="0"
                             step="0.01">
+                        <small class="text-muted" id="accPriceHint">يُقترح تلقائياً من الخطة مع إمكانية عمل خصم خاص للعميل</small>
                     </div>
                     <div class="form-group">
                         <label>حالة السداد</label>
@@ -600,17 +616,12 @@
                         <summary class="form-collapsible-toggle">
                             <i class="fa-solid fa-chevron-left toggle-arrow"></i>
                             المزيد من التفاصيل
-                            <small class="text-muted">(التاريخ، بيانات الدخول، ملاحظات)</small>
+                            <small class="text-muted">(تاريخ البدء، بيانات الدخول، ملاحظات)</small>
                         </summary>
                         <div class="form-collapsible-body grid-form">
                             <div class="form-group">
                                 <label>تاريخ بدء الاشتراك <span class="text-danger">*</span></label>
                                 <input type="date" id="accStartDate" required class="form-control">
-                            </div>
-                            <div class="form-group">
-                                <label>المدة (بالأيام) <span class="text-danger">*</span></label>
-                                <input type="number" id="accDurationDays" required class="form-control" value="30"
-                                    min="1">
                             </div>
 
                             <div class="form-group">
@@ -653,7 +664,7 @@
 
     <!-- Plan Modal -->
     <div class="modal glass-modal" id="planModal">
-        <div class="modal-content glass-panel">
+        <div class="modal-content glass-panel" style="max-width: 650px;">
             <div class="modal-header">
                 <h3 id="planModalTitle">إضافة خطة اشتراك جديدة</h3>
                 <div style="display:flex;gap:0.5rem;align-items:center;">
@@ -668,7 +679,7 @@
                     <input type="hidden" id="planId">
 
                     <!-- Essential fields -->
-                    <div class="form-section-title">بيانات الخطة الأساسية</div>
+                    <div class="form-section-title">بيانات الخطة الأساسية والنوع</div>
                     <div class="form-group">
                         <label>الخدمة / المنصة <span class="text-danger">*</span></label>
                         <select id="planPlatform" required class="form-control"></select>
@@ -676,44 +687,93 @@
                     <div class="form-group">
                         <label>اسم الخطة <span class="text-danger">*</span></label>
                         <input type="text" id="planName" required class="form-control"
-                            placeholder="مثال: يوتيوب فاميلي 6 أشخاص">
+                            placeholder="مثال: كلود برو، يوتيوب فاميلي">
                     </div>
 
-                    <div class="form-section-title">البيانات المالية</div>
                     <div class="form-group">
-                        <label>قيمة الاشتراك للعضو (ج.م) <span class="text-danger">*</span></label>
-                        <input type="number" id="planPricePerMember" required class="form-control" value="0" min="0"
-                            step="0.01">
+                        <label>نوع الخطة <span class="text-danger">*</span></label>
+                        <select id="planType" required class="form-control">
+                            <option value="private">خاصة (Private) — مستخدم واحد يدفع كامل القيمة</option>
+                            <option value="group">مجموعة (Group) — حساب مشترك يوزع على أعضاء</option>
+                            <option value="family">عائلة (Family) — دعوات لمقاعد منفصلة</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group" id="groupMaxMembersWrap">
+                        <label id="groupMaxMembersLabel">عدد المقاعد / الأعضاء المتاحين</label>
+                        <input type="number" id="planMaxMembers" class="form-control" value="4" min="1" max="50">
+                        <small class="text-muted" id="groupMaxMembersHint">عدد الأشخاص المشتركين في هذا الحساب</small>
+                    </div>
+
+                    <div class="form-section-title">التكلفة الأساسية عليك (Cost Basis)</div>
+                    <div class="form-group">
+                        <label>دورة دفع التكلفة الأساسية</label>
+                        <select id="planBillingCycle" class="form-control">
+                            <option value="monthly">شهرياً (Monthly)</option>
+                            <option value="yearly">سنوياً (Yearly)</option>
+                        </select>
                     </div>
                     <div class="form-group">
-                        <label>تكلفة التسجيل الكلية (ج.م)</label>
-                        <input type="number" id="planRegistrationCost" class="form-control" value="0" min="0"
-                            step="0.01">
+                        <label>التكلفة الشهرية عليك (ج.م)</label>
+                        <input type="number" id="planMonthlyCost" class="form-control" value="0" min="0" step="0.01"
+                            placeholder="تكلفتك الفعلية شهرياً">
                     </div>
+                    <div class="form-group">
+                        <label>التكلفة السنوية عليك (ج.م)</label>
+                        <input type="number" id="planYearlyCost" class="form-control" value="0" min="0" step="0.01"
+                            placeholder="تكلفتك الفعلية سنوياً">
+                    </div>
+                    <div class="form-group">
+                        <label>تكلفة تسجيل سابقة / أخرى (اختياري)</label>
+                        <input type="number" id="planRegistrationCost" class="form-control" value="0" min="0" step="0.01">
+                    </div>
+
+                    <div class="form-section-title">أسعار البيع المقترحة للمشتركين (سعر المقعد)</div>
+                    <div class="form-group">
+                        <label>سعر البيع الشهري (ج.م)</label>
+                        <input type="number" id="planPriceMonthly" class="form-control" value="0" min="0" step="0.01"
+                            placeholder="سعر الاشتراك الشهري للعميل">
+                    </div>
+                    <div class="form-group">
+                        <label>سعر البيع ربع السنوي (3 شهور)</label>
+                        <input type="number" id="planPriceQuarterly" class="form-control" value="0" min="0" step="0.01"
+                            placeholder="سعر الـ 3 شهور للعميل">
+                    </div>
+                    <div class="form-group">
+                        <label>سعر البيع نصف السنوي (6 شهور)</label>
+                        <input type="number" id="planPriceSemiAnnual" class="form-control" value="0" min="0" step="0.01"
+                            placeholder="سعر الـ 6 شهور للعميل">
+                    </div>
+                    <div class="form-group">
+                        <label>سعر البيع السنوي (ج.م)</label>
+                        <input type="number" id="planPriceYearly" class="form-control" value="0" min="0" step="0.01"
+                            placeholder="سعر السنة للعميل">
+                    </div>
+                    <input type="hidden" id="planPricePerMember" value="0">
 
                     <!-- Secondary fields -->
                     <details class="form-collapsible full-width">
                         <summary class="form-collapsible-toggle">
                             <i class="fa-solid fa-chevron-left toggle-arrow"></i>
-                            خيارات أخرى
-                            <small class="text-muted">(التاريخ، بيانات الحساب، ملاحظات)</small>
+                            خيارات وبيانات الحساب
+                            <small class="text-muted">(بيانات الدخول الماستر، ملاحظات)</small>
                         </summary>
                         <div class="form-collapsible-body grid-form">
                             <div class="form-group">
-                                <label>تاريخ بدء الخطة</label>
+                                <label>تاريخ بدء الخطة الفعلي</label>
                                 <input type="date" id="planStartDate" class="form-control">
                             </div>
                             <div class="form-group">
-                                <label>مدة الخطة (بالأيام)</label>
+                                <label>مدة التجديد التلقائي (بالأيام)</label>
                                 <input type="number" id="planDurationDays" class="form-control" value="365" min="1">
                             </div>
                             <div class="form-group">
-                                <label>الإيميل المستخدم</label>
+                                <label>الإيميل الرئيسي / مدير العائلة</label>
                                 <input type="email" id="planEmail" class="form-control"
                                     placeholder="account@example.com">
                             </div>
                             <div class="form-group">
-                                <label>كلمة المرور</label>
+                                <label>كلمة المرور الرئيسية</label>
                                 <div class="password-input">
                                     <input type="password" id="planPassword" class="form-control"
                                         placeholder="••••••••">
@@ -722,9 +782,9 @@
                                 </div>
                             </div>
                             <div class="form-group full-width">
-                                <label>ملاحظات</label>
+                                <label>ملاحظات الخطة</label>
                                 <textarea id="planNotes" class="form-control" rows="2"
-                                    placeholder="أي ملاحظات..."></textarea>
+                                    placeholder="أي ملاحظات حول الخطة وطريقة إدارتها..."></textarea>
                             </div>
                         </div>
                     </details>
