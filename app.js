@@ -936,6 +936,23 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!selectedId) select.selectedIndex = 0;
     }
 
+    // Plan Billing Cycle toggle in modal
+    const planBillingCycleSelect = document.getElementById('planBillingCycle');
+    if (planBillingCycleSelect) {
+        planBillingCycleSelect.addEventListener('change', (e) => {
+            const cycle = e.target.value;
+            const mGroup = document.getElementById('planMonthlyCostGroup');
+            const yGroup = document.getElementById('planYearlyCostGroup');
+            if (cycle === 'yearly') {
+                if (mGroup) mGroup.style.display = 'none';
+                if (yGroup) yGroup.style.display = 'block';
+            } else {
+                if (mGroup) mGroup.style.display = 'block';
+                if (yGroup) yGroup.style.display = 'none';
+            }
+        });
+    }
+
     // Plan type dynamic UI change
     const planTypeSelect = document.getElementById('planType');
     if (planTypeSelect) {
@@ -1087,6 +1104,15 @@ document.addEventListener('DOMContentLoaded', () => {
             typeSel.dispatchEvent(new Event('change'));
         }
 
+        const cycleSel = document.getElementById('planBillingCycle');
+        if (cycleSel) {
+            cycleSel.value = 'monthly';
+            cycleSel.dispatchEvent(new Event('change'));
+        }
+
+        const statusSel = document.getElementById('planStatus');
+        if (statusSel) statusSel.value = 'active';
+
         openModal('planModal');
     }
 
@@ -1096,8 +1122,6 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('planId').value = plan.id;
         populatePlanPlatformsDropdown(plan.platformId);
         document.getElementById('planName').value = plan.name || '';
-        document.getElementById('planStartDate').value = plan.startDate || '';
-        document.getElementById('planDurationDays').value = plan.durationDays || 365;
         document.getElementById('planEmail').value = plan.email || '';
         document.getElementById('planPassword').value = plan.password || '';
         document.getElementById('planPassword').type = 'password';
@@ -1111,23 +1135,23 @@ document.addEventListener('DOMContentLoaded', () => {
         const maxMemInp = document.getElementById('planMaxMembers');
         if (maxMemInp) maxMemInp.value = plan.maxMembers || 4;
 
-        // Costs
+        const statusSel = document.getElementById('planStatus');
+        if (statusSel) statusSel.value = plan.status || 'active';
+
+        // Costs & Billing Cycle
         const billCycle = document.getElementById('planBillingCycle');
-        if (billCycle) billCycle.value = plan.billingCycle || 'monthly';
+        if (billCycle) {
+            billCycle.value = plan.billingCycle || 'monthly';
+            billCycle.dispatchEvent(new Event('change'));
+        }
         const mCost = document.getElementById('planMonthlyCost');
         if (mCost) mCost.value = plan.monthlyCost || '';
         const yCost = document.getElementById('planYearlyCost');
         if (yCost) yCost.value = plan.yearlyCost || '';
-        const regCost = document.getElementById('planRegistrationCost');
-        if (regCost) regCost.value = plan.registrationCost || '';
 
         // Selling prices
         const pM = document.getElementById('planPriceMonthly');
         if (pM) pM.value = plan.priceMonthly || plan.pricePerMember || '';
-        const pQ = document.getElementById('planPriceQuarterly');
-        if (pQ) pQ.value = plan.priceQuarterly || '';
-        const pS = document.getElementById('planPriceSemiAnnual');
-        if (pS) pS.value = plan.priceSemiAnnual || '';
         const pY = document.getElementById('planPriceYearly');
         if (pY) pY.value = plan.priceYearly || '';
 
@@ -1148,33 +1172,27 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const planType = document.getElementById('planType').value;
         const maxMembers = planType === 'private' ? 1 : (parseInt(document.getElementById('planMaxMembers').value) || 4);
+        const billingCycle = document.getElementById('planBillingCycle').value;
+        const status = document.getElementById('planStatus').value;
 
         const monthlyCost = parseFloat(document.getElementById('planMonthlyCost').value) || 0;
         const yearlyCost = parseFloat(document.getElementById('planYearlyCost').value) || 0;
-        const registrationCost = parseFloat(document.getElementById('planRegistrationCost').value) || 0;
-        const billingCycle = document.getElementById('planBillingCycle').value;
-
         const priceMonthly = parseFloat(document.getElementById('planPriceMonthly').value) || 0;
-        const priceQuarterly = parseFloat(document.getElementById('planPriceQuarterly').value) || 0;
-        const priceSemiAnnual = parseFloat(document.getElementById('planPriceSemiAnnual').value) || 0;
         const priceYearly = parseFloat(document.getElementById('planPriceYearly').value) || 0;
 
         const planData = {
             platformId,
             name,
             planType,
+            status,
             maxMembers,
             billingCycle,
             monthlyCost,
             yearlyCost,
-            registrationCost: registrationCost || (billingCycle === 'yearly' ? yearlyCost : monthlyCost),
+            registrationCost: billingCycle === 'yearly' ? yearlyCost : monthlyCost,
             priceMonthly,
-            priceQuarterly,
-            priceSemiAnnual,
             priceYearly,
-            pricePerMember: priceMonthly, // backward compatibility
-            startDate: document.getElementById('planStartDate').value || new Date().toISOString().split('T')[0],
-            durationDays: parseInt(document.getElementById('planDurationDays').value) || 365,
+            pricePerMember: priceMonthly,
             email: document.getElementById('planEmail').value.trim(),
             password: document.getElementById('planPassword').value,
             notes: document.getElementById('planNotes').value.trim()
